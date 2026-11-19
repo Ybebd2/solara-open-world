@@ -1,6 +1,6 @@
 # SOLARA — an open-world crime game
 
-**gta6-01 "Make GTA 6" · re-implemented from the behavioural spec under @witty-meteor-32 (recording N)**
+**gta6-01 "Make GTA 6" · re-implemented from the behavioural spec under @witty-meteor-32**
 
 Kai Mercer is back in Solara, a golden-hour coastal city. Eight jobs from
 fixer Lupe stand between him and the top of the city — steal the cars,
@@ -14,7 +14,7 @@ node serve.ts 8903
 ```
 
 - **WASD** walk / drive · **Shift** sprint · **F** enter car / carjack (+1 star)
-- **Click / Space** shoot (VESPER pistol, 12-round mag) · **1–5** weapons
+- **Click** shoot (VESPER pistol, 12-round mag) · **1–5** weapons
 - **R** radio (PUERTO 88.3 / CELESTE 98.1 / SOLARA 98.3) · **M** map
   (zoom, pan, waypoint) · **P** pause
 - **Z** MARA / GHOST (−1 star) · **X** SULLY / PIT CREW (repair) ·

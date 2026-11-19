@@ -1,56 +1,52 @@
-// SOLARA — sound effects, all synthesized with WebAudio: the pistol
-// crack, the pickup blip, the payout arpeggio, the car door thunk, a
-// distant shot and a UI click. Every call is guarded so a missing audio
-// context can never break the game.
+// SOLARA — one-shot sound effects, synthesised with WebAudio.
 export class SoundFX {
-  constructor() {
-    this.ctx = null;
+  constructor(audio) {
+    this.audio = audio;
   }
-  ensure() {
-    if (this.ctx) return true;
-    try {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return false;
-      this.ctx = new AC();
-      return true;
-    } catch { return false; }
+
+  _ctx() {
+    if (!this.audio.ctx) this.audio.unlock();
+    return this.audio.ctx;
   }
-  _tone(freq, dur, type = 'sine', vol = 0.25, slideTo = null) {
-    if (!this.ensure()) return;
+
+  _blip(freq, dur, type = 'square', vol = 0.06) {
+    const ctx = this._ctx();
+    if (!ctx) return;
     try {
-      const t = this.ctx.currentTime;
-      const o = this.ctx.createOscillator();
-      const g = this.ctx.createGain();
-      o.type = type; o.frequency.setValueAtTime(freq, t);
-      if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
-      g.gain.setValueAtTime(vol, t);
-      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-      o.connect(g); g.connect(this.ctx.destination);
-      o.start(t); o.stop(t + dur + 0.02);
-    } catch { /* best-effort */ }
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = type;
+      o.frequency.value = freq;
+      g.gain.value = vol;
+      o.connect(g).connect(ctx.destination);
+      o.start();
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+      o.stop(ctx.currentTime + dur);
+    } catch (e) { /* ignore */ }
   }
-  _noise(dur, vol = 0.3) {
-    if (!this.ensure()) return;
+
+  _noise(dur, vol = 0.12) {
+    const ctx = this._ctx();
+    if (!ctx) return;
     try {
-      const t = this.ctx.currentTime;
-      const len = Math.floor(this.ctx.sampleRate * dur);
-      const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+      const len = Math.floor(ctx.sampleRate * dur);
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
       const d = buf.getChannelData(0);
       for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
-      const src = this.ctx.createBufferSource();
+      const src = ctx.createBufferSource();
       src.buffer = buf;
-      const g = this.ctx.createGain();
-      g.gain.setValueAtTime(vol, t);
-      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-      src.connect(g); g.connect(this.ctx.destination);
-      src.start(t);
-    } catch { /* best-effort */ }
+      const g = ctx.createGain();
+      g.gain.value = vol;
+      src.connect(g).connect(ctx.destination);
+      src.start();
+    } catch (e) { /* ignore */ }
   }
-  shoot() { this._noise(0.12, 0.4); this._tone(180, 0.1, 'square', 0.2, 60); }
-  shotDistant() { this._noise(0.2, 0.08); }
-  pickup() { this._tone(660, 0.09, 'sine', 0.25); setTimeout(() => this._tone(880, 0.12, 'sine', 0.25), 90); }
-  payout() { [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => this._tone(f, 0.16, 'triangle', 0.25), i * 90)); }
-  carDoor() { this._noise(0.08, 0.25); this._tone(120, 0.12, 'sine', 0.3, 70); }
-  click() { this._tone(440, 0.05, 'square', 0.12); }
-  denied() { this._tone(220, 0.15, 'square', 0.15, 160); }
+
+  shot() { this._noise(0.14, 0.16); this._blip(160, 0.08, 'square', 0.05); }
+  hit() { this._blip(320, 0.07, 'square', 0.06); }
+  cash() { this._blip(880, 0.09, 'sine', 0.07); this._blip(1320, 0.12, 'sine', 0.06); }
+  carjack() { this._blip(220, 0.12, 'sawtooth', 0.07); }
+  siren() { this._blip(660, 0.25, 'sine', 0.04); this._blip(520, 0.25, 'sine', 0.04); }
+  wasted() { this._blip(110, 0.7, 'sawtooth', 0.08); }
+  click() { this._blip(1200, 0.04, 'sine', 0.04); }
 }

@@ -1,51 +1,62 @@
-// SOLARA — the wanted level: five stars, an EVADING meter that fills
-// while no unit can see Kai, and the HIDDEN / IN SIGHT call. Lose the
-// tail completely and a star comes off.
+// SOLARA — the wanted system: five gold stars, evasion, HIDDEN / IN SIGHT,
+// and the escape payout.
 import { clamp } from './config.js';
 
 export class Wanted {
-  constructor(G) {
-    this.G = G;
+  constructor() {
     this.stars = 0;
-    this.evading = 0;
-    this.status = 'HIDDEN';
+    this.evading = 0;      // 0..100 — fills while hidden
+    this.inSight = false;
+    this._escapeTimer = 0;
   }
-  // The response code runs one below the star count: three stars is a
-  // CODE 2 response, four stars a CODE 3, and so on.
-  get code() { return Math.max(1, this.stars - 1); }
-  addStar() {
-    this.stars = Math.min(5, this.stars + 1);
+
+  addStars(n) {
+    this.stars = clamp(this.stars + n, 0, 5);
     this.evading = 0;
-    this.status = 'IN SIGHT';
   }
-  dropStar() {
-    if (this.stars > 0) {
-      this.stars -= 1;
+
+  removeStars(n) {
+    this.stars = clamp(this.stars - n, 0, 5);
+    if (this.stars === 0) this.evading = 0;
+  }
+
+  update(dt, police, playerPos) {
+    if (this.stars === 0) {
+      this.inSight = false;
       this.evading = 0;
-      this.G.hud?.toast('You lost them — heat down', 'good');
+      return 0;
     }
-  }
-  // Seen = any cruiser within 45 m or any officer within 30 m.
-  update(dt) {
-    const G = this.G;
-    if (this.stars <= 0) { this.evading = 0; this.status = 'HIDDEN'; return; }
-    const p = G.player;
+    // Seen if any cruiser or officer is close.
     let seen = false;
-    for (const c of G.police.cruisers) {
-      if (c.status !== 'WRECKED' && Math.hypot(c.x - p.x, c.z - p.z) < 45) { seen = true; break; }
+    for (const c of police.cruisers) {
+      if (Math.hypot(c.x - playerPos.x, c.z - playerPos.z) < 55) { seen = true; break; }
     }
     if (!seen) {
-      for (const o of G.police.officers) {
-        if (Math.hypot(o.x - p.x, o.z - p.z) < 30) { seen = true; break; }
+      for (const o of police.officers) {
+        if (Math.hypot(o.x - playerPos.x, o.z - playerPos.z) < 35) { seen = true; break; }
       }
     }
+    this.inSight = seen;
     if (seen) {
-      this.status = 'IN SIGHT';
-      this.evading = Math.max(0, this.evading - 22 * dt);
+      this.evading = Math.max(0, this.evading - dt * 14);
+      this._escapeTimer = 0;
     } else {
-      this.status = 'HIDDEN';
-      this.evading = clamp(this.evading + 13 * dt, 0, 100);
-      if (this.evading >= 100) this.dropStar();
+      this.evading = Math.min(100, this.evading + dt * 3);
+      if (this.evading >= 100) {
+        this._escapeTimer += dt;
+        if (this._escapeTimer > 1) {
+          const paid = this.stars * 150;
+          this.stars = 0;
+          this.evading = 0;
+          this._escapeTimer = 0;
+          return paid;
+        }
+      }
     }
+    return 0;
+  }
+
+  get code() {
+    return this.stars <= 1 ? 1 : this.stars <= 3 ? 2 : 3;
   }
 }

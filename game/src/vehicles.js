@@ -1,185 +1,167 @@
-// SOLARA — every vehicle is built from boxes, cylinders and sprites:
-// a body, a glass cabin, four wheels, square headlights with halos and
-// beam pools, and a red taillight strip. The police cruiser adds a black
-// hood and roof, a gold side line and a red light bar.
+// SOLARA — cars. Every car carries halos + lampMat so the dusk checks can
+// read them, and x/z/speed synced from the mesh each frame.
 import * as THREE from '../vendor/three.module.min.js';
 import { clamp } from './config.js';
 
-function haloTexture() {
+function haloSprite(color, scale) {
   const c = document.createElement('canvas');
-  c.width = 128; c.height = 128;
+  c.width = c.height = 64;
   const g = c.getContext('2d');
-  const grad = g.createRadialGradient(64, 64, 4, 64, 64, 62);
-  grad.addColorStop(0, 'rgba(255,248,220,0.95)');
-  grad.addColorStop(0.4, 'rgba(255,230,160,0.4)');
-  grad.addColorStop(1, 'rgba(255,230,160,0)');
-  g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-const HALO_TEX = null; // created lazily per car (canvas needs a document)
-let sharedHalo = null;
-function haloTex() {
-  if (!sharedHalo) sharedHalo = haloTexture();
-  return sharedHalo;
+  const grad = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+  grad.addColorStop(0, 'rgba(255,255,255,0.9)');
+  grad.addColorStop(0.35, color);
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  const tex = new THREE.CanvasTexture(c);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false });
+  const s = new THREE.Sprite(mat);
+  s.scale.set(scale, scale, 1);
+  return s;
 }
 
-function box(w, h, d, mat, x = 0, y = 0, z = 0) {
+function box(w, h, d, mat, x, y, z) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
   m.position.set(x, y, z);
   return m;
 }
 
-export class Car {
-  constructor(kind, color, name) {
-    this.kind = kind;
-    this.name = name;
-    this.color = color;
-    this.speed = 0;
-    this.condition = 100;
-    this.mesh = new THREE.Group();
-    this.halos = [];
-    this.beamPools = [];
-    this._heading = 0;
-    this._build(kind, color);
+export function makeCar(def) {
+  const { name, color, kind = 'sedan', police = false } = def;
+  const group = new THREE.Group();
+  const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.45 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x1a2a3a, roughness: 0.15, metalness: 0.6 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.8 });
+  const lampMat = new THREE.MeshStandardMaterial({ color: 0xfff6d8, emissive: 0xfff2b0, emissiveIntensity: 0 });
+  const tailMat = new THREE.MeshStandardMaterial({ color: 0xaa0a0a, emissive: 0xff1a1a, emissiveIntensity: 0.2 });
+
+  const long = kind === 'coupe' ? 4.6 : kind === 'van' ? 5.2 : kind === 'pickup' ? 4.8 : 4.4;
+  const wide = kind === 'motorcycle' ? 0.8 : 2.0;
+  const bodyH = kind === 'van' ? 1.5 : 0.75;
+
+  if (kind === 'motorcycle') {
+    group.add(box(0.5, 0.5, 2.2, paint, 0, 0.75, 0));
+    group.add(box(0.9, 0.9, 0.7, glass, 0, 1.05, -0.2));
+    // Rider.
+    const rider = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.9, 0.5),
+      new THREE.MeshStandardMaterial({ color: 0xc02020, roughness: 0.8 }));
+    rider.position.set(0, 1.35, 0.25);
+    group.add(rider);
+    const helm = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 8),
+      new THREE.MeshStandardMaterial({ color: 0x202020, roughness: 0.3 }));
+    helm.position.set(0, 1.95, 0.2);
+    group.add(helm);
+  } else {
+    // Wedge body: low nose, higher tail.
+    const body = box(wide, bodyH, long, paint, 0, 0.62, 0);
+    body.rotation.x = 0;
+    group.add(body);
+    const nose = box(wide * 0.94, 0.42, 1.1, paint, 0, 0.42, long / 2 + 0.35);
+    group.add(nose);
+    const cabin = box(wide * 0.82, 0.62, long * 0.42, glass, 0, 1.2, -long * 0.08);
+    group.add(cabin);
+    if (kind === 'coupe') {
+      const spoiler = box(wide * 0.9, 0.09, 0.4, dark, 0, 1.02, -long / 2 - 0.1);
+      group.add(spoiler);
+      const skirt = box(wide * 1.02, 0.14, long * 0.9, dark, 0, 0.22, 0);
+      group.add(skirt);
+    }
+    if (kind === 'van') {
+      group.add(box(wide * 0.9, 0.9, long * 0.5, paint, 0, 1.6, -long * 0.15));
+    }
+    if (kind === 'pickup') {
+      group.add(box(wide * 0.86, 0.5, long * 0.34, dark, 0, 0.85, -long * 0.28));
+    }
   }
-  get x() { return this.mesh.position.x; }
-  set x(v) { this.mesh.position.x = v; }
-  get z() { return this.mesh.position.z; }
-  set z(v) { this.mesh.position.z = v; }
-  get heading() { return this._heading; }
-  set heading(v) { this._heading = v; this.mesh.rotation.y = v; }
-  forward() { return { x: Math.sin(this._heading), z: Math.cos(this._heading) }; }
 
-  _build(kind, color) {
-    const bodyMat = new THREE.MeshLambertMaterial({ color });
-    const glassMat = new THREE.MeshLambertMaterial({ color: 0x16233c });
-    const darkMat = new THREE.MeshLambertMaterial({ color: 0x141416 });
-    const chromeMat = new THREE.MeshLambertMaterial({ color: 0xc8ccd4 });
-    // Headlight material: the test reads lampMat.emissiveIntensity.
-    this.lampMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xfff2c8, emissiveIntensity: 0.6 });
-    this.tailMat = new THREE.MeshLambertMaterial({ color: 0xaa1111, emissive: 0xff2211, emissiveIntensity: 0.8 });
-    const g = this.mesh;
+  // Wheels.
+  const wheelGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.26, 12);
+  const wheels = [];
+  const wheelPos = kind === 'motorcycle'
+    ? [[0, 0.36, 0.85], [0, 0.36, -0.85]]
+    : [[-wide / 2, 0.36, long / 2 - 0.8], [wide / 2, 0.36, long / 2 - 0.8],
+       [-wide / 2, 0.36, -long / 2 + 0.8], [wide / 2, 0.36, -long / 2 + 0.8]];
+  for (const [x, y, z] of wheelPos) {
+    const w = new THREE.Mesh(wheelGeo, dark);
+    w.rotation.z = Math.PI / 2;
+    w.position.set(x, y, z);
+    group.add(w);
+    wheels.push(w);
+  }
 
-    if (kind === 'motorcycle') {
-      const red = new THREE.MeshLambertMaterial({ color: 0xc02020 });
-      g.add(box(0.5, 0.5, 1.9, red, 0, 0.75, 0));
-      g.add(box(0.7, 0.35, 0.7, darkMat, 0, 0.95, -0.4));
-      const wheelGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.18, 12);
-      for (const z of [0.75, -0.75]) {
-        const w = new THREE.Mesh(wheelGeo, darkMat);
-        w.rotation.z = Math.PI / 2; w.position.set(0, 0.34, z); g.add(w);
+  // Headlights: two bright white squares + halo sprites + beam pools.
+  const halos = [];
+  const headZ = long / 2 + 0.95;
+  for (const x of [-0.62, 0.62]) {
+    if (kind === 'motorcycle') break;
+    const lamp = box(0.42, 0.26, 0.1, lampMat, x, 0.55, headZ - 0.4);
+    group.add(lamp);
+    const halo = haloSprite('rgba(255,244,190,0.8)', 2.6);
+    halo.position.set(x, 0.55, headZ + 0.3);
+    group.add(halo);
+    halos.push(halo);
+    // Beam pool on the asphalt ahead.
+    const pool = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.2, 5),
+      new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 0, depthWrite: false }),
+    );
+    pool.rotation.x = -Math.PI / 2;
+    pool.position.set(x, 0.04, headZ + 3.2);
+    group.add(pool);
+    halos.push(pool);
+  }
+  // Taillight strip: full-width red, with halo.
+  if (kind !== 'motorcycle') {
+    const tail = box(wide * 0.92, 0.2, 0.08, tailMat, 0, 0.68, -long / 2 - 0.42);
+    group.add(tail);
+    const tailHalo = haloSprite('rgba(255,40,40,0.7)', 3.4);
+    tailHalo.position.set(0, 0.68, -long / 2 - 0.8);
+    group.add(tailHalo);
+    halos.push(tailHalo);
+  }
+
+  if (police) {
+    // Black hood + roof, gold side line, red roof light bar.
+    const hood = box(wide * 0.96, 0.06, 1.5, dark, 0, 1.0, long / 2 - 0.6);
+    group.add(hood);
+    const roof = box(wide * 0.84, 0.06, long * 0.4, dark, 0, 1.53, -long * 0.08);
+    group.add(roof);
+    const gold = new THREE.MeshStandardMaterial({ color: 0xd8b13a, roughness: 0.4, metalness: 0.5 });
+    for (const s of [-1, 1]) group.add(box(0.05, 0.12, long * 0.9, gold, s * (wide / 2 + 0.01), 0.62, 0));
+    const barMat = new THREE.MeshStandardMaterial({ color: 0xaa0000, emissive: 0xff2020, emissiveIntensity: 1.6 });
+    const bar = box(1.1, 0.22, 0.4, barMat, 0, 1.66, -long * 0.08);
+    group.add(bar);
+    group.userData.lightBarMat = barMat;
+  }
+
+  if (kind === 'taxi') {
+    const signMat = new THREE.MeshStandardMaterial({ color: 0xffd23a, emissive: 0xffd23a, emissiveIntensity: 0.7 });
+    group.add(box(0.9, 0.24, 0.5, signMat, 0, 1.62, -long * 0.08));
+  }
+
+  const car = {
+    name, kind, police,
+    mesh: group,
+    x: 0, z: 0, angle: 0,
+    speed: 0, condition: 100,
+    halos, lampMat, tailMat, wheels,
+    topSpeed: kind === 'coupe' ? 34 : kind === 'motorcycle' ? 30 : 26,
+    accel: 14,
+    updateDusk(duskT) {
+      const d = clamp(duskT, 0, 1);
+      lampMat.emissiveIntensity = 0.4 + d * 2.4;
+      tailMat.emissiveIntensity = 0.2 + d * 1.6;
+      for (const h of halos) {
+        if (h.material && h.material.opacity !== undefined) h.material.opacity = d * 0.8;
       }
-      // Rider: torso, helmet, arms to the bars.
-      const skin = new THREE.MeshLambertMaterial({ color: 0xc98d64 });
-      g.add(box(0.55, 0.7, 0.35, new THREE.MeshLambertMaterial({ color: 0x222226 }), 0, 1.35, -0.1));
-      const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), red);
-      helmet.position.set(0, 1.85, -0.1); g.add(helmet);
-      g.add(box(0.12, 0.12, 0.7, skin, -0.3, 1.5, 0.35));
-      g.add(box(0.12, 0.12, 0.7, skin, 0.3, 1.5, 0.35));
-      // One headlight.
-      const hl = box(0.3, 0.18, 0.08, this.lampMat, 0, 0.9, 1.0);
-      g.add(hl);
-      const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: haloTex(), transparent: true, opacity: 0.2, depthWrite: false, blending: THREE.AdditiveBlending }));
-      halo.scale.set(1.6, 1.6, 1); halo.position.set(0, 0.9, 1.15); g.add(halo);
-      this.halos.push(halo);
-      this._addBeamPools(g, 1);
-      return;
-    }
-
-    const isCoupe = kind === 'coupe';
-    const isVan = kind === 'van';
-    const isPickup = kind === 'pickup';
-    const isCruiser = kind === 'cruiser';
-    const isTaxi = kind === 'taxi';
-    const L = isVan ? 4.6 : isCoupe ? 4.6 : 4.2;
-    const W = isVan ? 2.0 : 1.9;
-    const bodyH = isVan ? 1.5 : 0.62;
-    const bodyY = isVan ? 1.0 : 0.55;
-
-    // Main body.
-    g.add(box(W, bodyH, L, bodyMat, 0, bodyY, 0));
-    if (isCoupe) {
-      // Wedge nose: a sloped front block.
-      const nose = box(W * 0.96, 0.34, 1.1, bodyMat, 0, 0.42, L / 2 - 0.2);
-      nose.rotation.x = -0.18; g.add(nose);
-    }
-    // Glass cabin + body-colour roof.
-    if (!isVan) {
-      g.add(box(W * 0.82, 0.55, L * 0.42, glassMat, 0, bodyY + bodyH / 2 + 0.26, -L * 0.05));
-      g.add(box(W * 0.84, 0.08, L * 0.4, bodyMat, 0, bodyY + bodyH / 2 + 0.56, -L * 0.05));
-    } else {
-      g.add(box(W * 0.9, 0.5, L * 0.7, glassMat, 0, 1.95, L * 0.08));
-    }
-    if (isPickup) {
-      // Flat black bed behind the cab.
-      g.add(box(W * 0.9, 0.1, L * 0.42, darkMat, 0, bodyY + bodyH / 2 + 0.02, -L * 0.24));
-      g.add(box(W * 0.82, 0.5, L * 0.3, glassMat, 0, bodyY + bodyH / 2 + 0.24, L * 0.28));
-    }
-    // Wheels.
-    const wheelGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.26, 12);
-    for (const [wx, wz] of [[-W / 2 + 0.1, L / 2 - 0.85], [W / 2 - 0.1, L / 2 - 0.85], [-W / 2 + 0.1, -L / 2 + 0.85], [W / 2 - 0.1, -L / 2 + 0.85]]) {
-      const w = new THREE.Mesh(wheelGeo, darkMat);
-      w.rotation.z = Math.PI / 2; w.position.set(wx, 0.36, wz); g.add(w);
-      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.28, 8), chromeMat);
-      hub.rotation.z = Math.PI / 2; hub.position.set(wx, 0.36, wz); g.add(hub);
-    }
-    // Square white headlights + halos.
-    for (const sx of [-0.62, 0.62]) {
-      g.add(box(0.42, 0.2, 0.08, this.lampMat, sx, 0.62, L / 2 + 0.02));
-      const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: haloTex(), transparent: true, opacity: 0.2, depthWrite: false, blending: THREE.AdditiveBlending }));
-      halo.scale.set(2.2, 2.2, 1); halo.position.set(sx, 0.62, L / 2 + 0.25); g.add(halo);
-      this.halos.push(halo);
-    }
-    // Full-width red taillight strip.
-    g.add(box(W * 0.92, 0.16, 0.08, this.tailMat, 0, 0.68, -L / 2 - 0.02));
-    // Beam pools on the asphalt ahead.
-    this._addBeamPools(g, 2);
-    // Bumpers.
-    g.add(box(W, 0.18, 0.14, chromeMat, 0, 0.32, L / 2 + 0.04));
-    g.add(box(W, 0.18, 0.14, chromeMat, 0, 0.32, -L / 2 - 0.04));
-
-    if (isTaxi) {
-      const sign = box(0.7, 0.22, 0.4, new THREE.MeshLambertMaterial({ color: 0xffd34d, emissive: 0xcc9900, emissiveIntensity: 0.7 }), 0, bodyY + bodyH / 2 + 0.72, -L * 0.05);
-      g.add(sign);
-    }
-    if (isCruiser) {
-      // Black hood and roof, thin gold side line, red roof light bar.
-      g.add(box(W * 0.94, 0.06, 1.15, darkMat, 0, bodyY + bodyH / 2 + 0.02, L / 2 - 0.6));
-      g.add(box(W * 0.86, 0.06, L * 0.38, darkMat, 0, bodyY + bodyH / 2 + 0.62, -L * 0.05));
-      const gold = new THREE.MeshLambertMaterial({ color: 0xd8b13a, emissive: 0x664400, emissiveIntensity: 0.4 });
-      g.add(box(0.05, 0.09, L * 0.9, gold, -W / 2 - 0.01, 0.62, 0));
-      g.add(box(0.05, 0.09, L * 0.9, gold, W / 2 + 0.01, 0.62, 0));
-      const barMat = new THREE.MeshLambertMaterial({ color: 0xcc1111, emissive: 0xff2222, emissiveIntensity: 1.6 });
-      g.add(box(1.1, 0.16, 0.34, barMat, 0, bodyY + bodyH / 2 + 0.74, -L * 0.05));
-      this.lightBarMat = barMat;
-    }
-  }
-
-  _addBeamPools(g, count) {
-    const poolMat = new THREE.MeshBasicMaterial({ color: 0xfff2c8, transparent: true, opacity: 0.0, blending: THREE.AdditiveBlending, depthWrite: false });
-    const n = count === 1 ? 1 : 2;
-    for (let i = 0; i < n; i++) {
-      const pool = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 5.5), poolMat.clone());
-      pool.rotation.x = -Math.PI / 2;
-      pool.position.set(n === 1 ? 0 : (i === 0 ? -0.62 : 0.62), 0.05, 5.2);
-      g.add(pool);
-      this.beamPools.push(pool);
-    }
-  }
-
-  // Dusk drives the glow: halos, headlights, taillights, beam pools.
-  setDusk(duskT) {
-    const glow = clamp(duskT, 0, 1);
-    for (const h of this.halos) h.material.opacity = 0.12 + glow * 0.7;
-    this.lampMat.emissiveIntensity = 0.5 + glow * 2.2;
-    this.tailMat.emissiveIntensity = 0.6 + glow * 1.4;
-    for (const p of this.beamPools) p.material.opacity = glow * 0.34;
-    if (this.lightBarMat) this.lightBarMat.emissiveIntensity = 1.2 + (Math.sin(Date.now() / 160) > 0 ? 1.2 : 0.2);
-  }
-}
-
-export function makeCar(kind, color, name) {
-  return new Car(kind, color, name);
+      if (group.userData.lightBarMat) {
+        group.userData.lightBarMat.emissiveIntensity = 1.2 + d * 1.6;
+      }
+    },
+    sync() {
+      this.x = group.position.x;
+      this.z = group.position.z;
+    },
+  };
+  return car;
 }

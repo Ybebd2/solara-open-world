@@ -1,72 +1,55 @@
-// SOLARA — the radio: three procedural stations built from WebAudio
-// oscillators, no audio files. PUERTO is a warm Latin pulse, CELESTE a
-// slow synth wash, SOLARA a night-drive bassline. Everything is guarded:
-// headless runs have no audio and must never throw.
-const STATIONS = [
-  { bpm: 96, root: 220, wave: 'triangle', bass: [0, 0, 7, 5] },
-  { bpm: 72, root: 196, wave: 'sine', bass: [0, 3, 5, 7] },
-  { bpm: 104, root: 174, wave: 'sawtooth', bass: [0, 0, 10, 7] },
-];
-
+// SOLARA — procedural audio: engine hum, radio beds, sirens. WebAudio only,
+// created lazily on the first user gesture; every call is guarded.
 export class AudioEngine {
   constructor() {
     this.ctx = null;
+    this.engineOsc = null;
+    this.engineGain = null;
+    this.radioOsc = null;
+    this.radioGain = null;
     this.station = 0;
-    this._timer = null;
-    this._step = 0;
-    this.muted = false;
+    this._unlocked = false;
   }
-  ensure() {
-    if (this.ctx) return true;
+
+  unlock() {
+    if (this._unlocked) return;
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return false;
+      if (!AC) return;
       this.ctx = new AC();
-      this._master = this.ctx.createGain();
-      this._master.gain.value = 0.14;
-      this._master.connect(this.ctx.destination);
-      return true;
-    } catch { return false; }
+      this._unlocked = true;
+      // Engine hum.
+      this.engineOsc = this.ctx.createOscillator();
+      this.engineOsc.type = 'sawtooth';
+      this.engineOsc.frequency.value = 55;
+      this.engineGain = this.ctx.createGain();
+      this.engineGain.gain.value = 0;
+      this.engineOsc.connect(this.engineGain).connect(this.ctx.destination);
+      this.engineOsc.start();
+      // Radio bed: a soft chord pad.
+      this.radioOsc = this.ctx.createOscillator();
+      this.radioOsc.type = 'triangle';
+      this.radioOsc.frequency.value = 220;
+      this.radioGain = this.ctx.createGain();
+      this.radioGain.gain.value = 0.0;
+      this.radioOsc.connect(this.radioGain).connect(this.ctx.destination);
+      this.radioOsc.start();
+    } catch (e) { /* audio is optional */ }
   }
-  start(station) {
-    if (!this.ensure()) return;
+
+  setEngine(speedNorm, inCar) {
+    if (!this.ctx || !this.engineOsc) return;
+    const t = this.ctx.currentTime;
+    this.engineOsc.frequency.setTargetAtTime(45 + speedNorm * 90, t, 0.1);
+    this.engineGain.gain.setTargetAtTime(inCar ? 0.035 + speedNorm * 0.03 : 0, t, 0.1);
+  }
+
+  setRadio(station, on) {
     this.station = station;
-    this.stop();
-    const stepDur = 60 / STATIONS[station].bpm / 2;
-    this._step = 0;
-    this._timer = setInterval(() => this._tick(stepDur), stepDur * 1000);
-  }
-  stop() {
-    if (this._timer) { clearInterval(this._timer); this._timer = null; }
-  }
-  setStation(station) {
-    this.station = station;
-    if (this._timer) this.start(station);
-  }
-  _tick(stepDur) {
-    if (this.muted || !this.ctx) return;
-    const st = STATIONS[this.station];
-    const scale = [0, 3, 5, 7, 10];
-    const idx = (this._step * 7 + Math.floor(this._step / 4)) % scale.length;
-    const freq = st.root * Math.pow(2, scale[idx] / 12) * (this._step % 8 === 0 ? 2 : 1);
-    this._note(freq, stepDur * 0.9, st.wave, 0.5);
-    if (this._step % 2 === 0) {
-      const b = st.bass[(this._step / 2) % st.bass.length];
-      this._note(st.root / 2 * Math.pow(2, b / 12), stepDur * 1.8, 'sine', 0.8);
-    }
-    this._step++;
-  }
-  _note(freq, dur, wave, vol) {
-    try {
-      const t = this.ctx.currentTime;
-      const o = this.ctx.createOscillator();
-      const g = this.ctx.createGain();
-      o.type = wave; o.frequency.value = freq;
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(vol * 0.3, t + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-      o.connect(g); g.connect(this._master);
-      o.start(t); o.stop(t + dur + 0.05);
-    } catch { /* audio is best-effort */ }
+    if (!this.ctx || !this.radioOsc) return;
+    const t = this.ctx.currentTime;
+    const freqs = [196, 220, 246.9];
+    this.radioOsc.frequency.setTargetAtTime(freqs[station % 3], t, 0.2);
+    this.radioGain.gain.setTargetAtTime(on ? 0.02 : 0, t, 0.2);
   }
 }

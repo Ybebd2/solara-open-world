@@ -1,159 +1,143 @@
-// SOLARA — traffic: the cars that stream along the roads, the parked cars
-// Kai can steal, and the pedestrians on the sidewalks (one of whom flees,
-// arms out, when a carjack happens in front of them).
+// SOLARA — traffic: cars cruising the road grid, parked cars to steal,
+// pedestrians on the sidewalks who flee a carjack.
 import * as THREE from '../vendor/three.module.min.js';
-import { WORLD, mulberry32, clamp } from './config.js';
 import { makeCar } from './vehicles.js';
+import { WORLD, mulberry32, clamp } from './config.js';
 
-const TRAFFIC_KINDS = [
-  { kind: 'sedan', color: 0x2a5db0, name: 'Meridian' },
-  { kind: 'sedan', color: 0xc03028, name: 'Comet' },
-  { kind: 'sedan', color: 0xe8e8e8, name: 'Alba' },
-  { kind: 'sedan', color: 0x3a3a40, name: 'Nocturne' },
-  { kind: 'taxi', color: 0x2a9d8f, name: 'Taxi' },
-  { kind: 'van', color: 0xd8d8d8, name: 'Box Van' },
-  { kind: 'pickup', color: 0x2a9d8f, name: 'Flatbed' },
-  { kind: 'motorcycle', color: 0xc02020, name: 'Red Bike' },
-  { kind: 'coupe', color: 0xe86a1c, name: 'Fathom' },
+const TRAFFIC_DEFS = [
+  { name: 'Sol Cab', kind: 'taxi', color: 0x2fa8a0 },
+  { name: 'Vireo GT', kind: 'coupe', color: 0xe86a1a },
+  { name: 'Bruto', kind: 'sedan', color: 0x3a6fd8 },
+  { name: 'Comet RS', kind: 'coupe', color: 0xd8202a },
+  { name: 'Tortuga 4x4', kind: 'van', color: 0x4a7a5a },
+  { name: 'Pico', kind: 'pickup', color: 0x2fa8a0 },
+  { name: 'Lumen', kind: 'sedan', color: 0xc02020 },
+  { name: 'Veloce', kind: 'sedan', color: 0x2244aa },
 ];
 
-const PARKED_SPOTS = [
-  { x: -246, z: 40, heading: Math.PI, kind: 'sedan', color: 0x8a8f96, name: 'Bruto' },
-  { x: -254, z: -60, heading: 0, kind: 'sedan', color: 0x2a5db0, name: 'Meridian' },
-  { x: -246, z: 120, heading: Math.PI, kind: 'coupe', color: 0xe86a1c, name: 'Fathom' },
-  { x: -166, z: -20, heading: Math.PI / 2, kind: 'sedan', color: 0xc03028, name: 'Comet' },
-  { x: -86, z: 60, heading: -Math.PI / 2, kind: 'van', color: 0xd8d8d8, name: 'Box Van' },
-  { x: -6, z: -100, heading: Math.PI / 2, kind: 'pickup', color: 0x2a9d8f, name: 'Flatbed' },
-  { x: 74, z: 30, heading: -Math.PI / 2, kind: 'sedan', color: 0xe8e8e8, name: 'Alba' },
-  { x: 154, z: -40, heading: Math.PI / 2, kind: 'sedan', color: 0x3a3a40, name: 'Nocturne' },
-  { x: -246, z: -140, heading: 0, kind: 'taxi', color: 0x2a9d8f, name: 'Taxi' },
-  { x: -94, z: 140, heading: -Math.PI / 2, kind: 'sedan', color: 0x8a8f96, name: 'Bruto' },
-];
-
-class Ped {
-  constructor(scene, x, z) {
-    this.group = new THREE.Group();
-    const skin = new THREE.MeshLambertMaterial({ color: 0xc98d64 });
-    const shirt = new THREE.MeshLambertMaterial({ color: 0x4a7ab0 });
-    const pants = new THREE.MeshLambertMaterial({ color: 0x2a2a30 });
-    const mk = (w, h, d, mat, px, py, pz) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-      m.position.set(px, py, pz); this.group.add(m); return m;
-    };
-    mk(0.22, 0.75, 0.22, pants, -0.14, 0.38, 0);
-    mk(0.22, 0.75, 0.22, pants, 0.14, 0.38, 0);
-    mk(0.62, 0.7, 0.34, shirt, 0, 1.1, 0);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), skin);
-    head.position.set(0, 1.68, 0); this.group.add(head);
-    const hair = new THREE.Mesh(new THREE.SphereGeometry(0.25, 10, 8), new THREE.MeshLambertMaterial({ color: 0x2a1a10 }));
-    hair.position.set(0, 1.76, -0.03); hair.scale.set(1, 0.7, 1); this.group.add(hair);
-    this.armL = mk(0.16, 0.62, 0.16, skin, -0.4, 1.15, 0);
-    this.armR = mk(0.16, 0.62, 0.16, skin, 0.4, 1.15, 0);
-    this.group.position.set(x, 0, z);
-    this.heading = 0;
-    this.speed = 1.2;
-    this.fleeing = false;
-    scene.add(this.group);
-  }
-  setFlee(on) {
-    this.fleeing = on;
-    this.armL.rotation.z = on ? 1.25 : 0;
-    this.armR.rotation.z = on ? -1.25 : 0;
-  }
-}
+const PED_COLORS = [0xe8c93a, 0xc02020, 0x2a7ad8, 0x7a4ad8, 0x3a9e5f, 0xe87a2a];
 
 export class Traffic {
-  constructor(G) {
-    this.G = G;
-    this.cars = [];
-    this.parked = [];
+  constructor(scene, seed) {
+    this.scene = scene;
+    this.rng = mulberry32(seed + 7);
+    this.cars = [];     // moving traffic
+    this.parked = [];   // stealable parked cars
     this.peds = [];
-    this.frozen = false;
-    const rng = mulberry32(11);
-    // Moving traffic on the grid.
-    const roads = [];
-    for (const z of WORLD.crossZ) { roads.push({ alongX: true, at: z }); roads.push({ alongX: true, at: z }); }
-    for (const x of WORLD.northX) roads.push({ alongX: false, at: x });
-    roads.push({ alongX: false, at: WORLD.beachRoadX });
+    this._build();
+  }
+
+  _build() {
+    const rng = this.rng;
+    // Moving traffic on the grid roads.
     for (let i = 0; i < 14; i++) {
-      const r = roads[i % roads.length];
-      const spec = TRAFFIC_KINDS[Math.floor(rng() * TRAFFIC_KINDS.length)];
-      const car = makeCar(spec.kind, spec.color, spec.name);
-      const dir = rng() < 0.5 ? 1 : -1;
-      const lane = (rng() < 0.5 ? -3.4 : 3.4);
-      if (r.alongX) {
-        car.x = -240 + rng() * 480;
-        car.z = r.at + lane * dir;
-        car.heading = dir > 0 ? Math.PI / 2 : -Math.PI / 2;
-      } else {
-        car.x = r.at + lane * dir;
-        car.z = -240 + rng() * 480;
-        car.heading = dir > 0 ? 0 : Math.PI;
-      }
-      car.speed = 8 + rng() * 6;
-      car._road = r; car._dir = dir; car._lane = lane;
-      car.mesh.position.y = 0;
-      G.scene.add(car.mesh);
+      const def = TRAFFIC_DEFS[i % TRAFFIC_DEFS.length];
+      const car = makeCar(def);
+      const vertical = rng() < 0.5;
+      const lane = (Math.floor(rng() * 9) - 4) * WORLD.block;
+      const along = -300 + rng() * 600;
+      car.mesh.position.set(vertical ? lane + (rng() < 0.5 ? 3.6 : -3.6) : along, 0, vertical ? along : lane + (rng() < 0.5 ? 3.6 : -3.6));
+      car.angle = vertical ? (rng() < 0.5 ? 0 : Math.PI) : (rng() < 0.5 ? Math.PI / 2 : -Math.PI / 2);
+      car.mesh.rotation.y = car.angle;
+      car.speed = 7 + rng() * 6;
+      car.dir = vertical ? Math.sign(Math.cos(car.angle)) : Math.sign(Math.sin(car.angle));
+      car.vertical = vertical;
+      car.lane = lane;
+      this.scene.add(car.mesh);
       this.cars.push(car);
     }
-    // Parked cars.
-    for (const s of PARKED_SPOTS) {
-      const car = makeCar(s.kind, s.color, s.name);
-      car.x = s.x; car.z = s.z; car.heading = s.heading; car.speed = 0;
-      G.scene.add(car.mesh);
+    // Parked cars along the beach road and downtown.
+    const spots = [
+      { x: 196, z: -40, a: Math.PI / 2 }, { x: 196, z: 30, a: Math.PI / 2 },
+      { x: -70, z: 10, a: 0 }, { x: 70, z: -70, a: Math.PI },
+      { x: -130, z: 70, a: Math.PI / 2 }, { x: 130, z: 130, a: 0 },
+      { x: 10, z: 130, a: Math.PI }, { x: -190, z: -30, a: Math.PI / 2 },
+    ];
+    spots.forEach((s, i) => {
+      const def = TRAFFIC_DEFS[(i + 2) % TRAFFIC_DEFS.length];
+      const car = makeCar(def);
+      car.mesh.position.set(s.x, 0, s.z);
+      car.mesh.rotation.y = s.a;
+      car.angle = s.a;
+      car.sync();
+      this.scene.add(car.mesh);
       this.parked.push(car);
-    }
-    // Pedestrians on the sidewalks.
-    const pedSpots = [[-240, -40], [-240, 60], [-160, 20], [-80, -30], [60, 100], [140, -60], [-240, 160], [10, -140]];
-    for (const [x, z] of pedSpots) this.peds.push(new Ped(G.scene, x, z));
-  }
-
-  nearestParked(x, z, maxD) {
-    let best = null, bd = maxD;
-    for (const c of this.parked) {
-      const d = Math.hypot(c.x - x, c.z - z);
-      if (d < bd) { bd = d; best = c; }
-    }
-    return best;
-  }
-
-  // The closest pedestrian to (x, z) starts fleeing, arms out.
-  scarePed(x, z) {
-    let best = null, bd = 30;
-    for (const p of this.peds) {
-      const d = Math.hypot(p.group.position.x - x, p.group.position.z - z);
-      if (d < bd) { bd = d; best = p; }
-    }
-    if (best) {
-      best.setFlee(true);
-      const dx = best.group.position.x - x, dz = best.group.position.z - z;
-      best.heading = Math.atan2(dx, dz);
+    });
+    // Pedestrians.
+    for (let i = 0; i < 12; i++) {
+      const ped = this._makePed(PED_COLORS[i % PED_COLORS.length]);
+      ped.group.position.set(-260 + rng() * 480, 0, -280 + rng() * 560);
+      ped.home = ped.group.position.clone();
+      ped.flee = 0;
+      this.scene.add(ped.group);
+      this.peds.push(ped);
     }
   }
 
-  setDusk(duskT) {
-    for (const c of this.cars) c.setDusk(duskT);
-    for (const c of this.parked) c.setDusk(duskT);
+  _makePed(shirtColor) {
+    const g = new THREE.Group();
+    const skin = new THREE.MeshStandardMaterial({ color: 0xc98a5e, roughness: 0.8 });
+    const shirt = new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.9 });
+    const pants = new THREE.MeshStandardMaterial({ color: 0x2a2f3a, roughness: 0.9 });
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.7, 0.32), shirt);
+    torso.position.y = 1.05;
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.36, 0.34), skin);
+    head.position.y = 1.62;
+    const legL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.22), pants);
+    legL.position.set(-0.14, 0.35, 0);
+    const legR = legL.clone();
+    legR.position.x = 0.14;
+    const armL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.6, 0.18), shirt);
+    armL.position.set(-0.36, 1.05, 0);
+    const armR = armL.clone();
+    armR.position.x = 0.36;
+    g.add(torso, head, legL, legR, armL, armR);
+    return { group: g, legL, legR, armL, armR, phase: Math.random() * 6, walkSpeed: 0 };
   }
 
-  update(dt) {
-    if (this.frozen) return;
-    const B = WORLD.cityHalf;
+  update(dt, duskT, playerPos, time) {
+    // Moving traffic follows its lane; wraps at the city edge.
     for (const c of this.cars) {
-      const f = c.forward();
-      c.x += f.x * c.speed * dt;
-      c.z += f.z * c.speed * dt;
-      if (c.x > B) c.x = -B; if (c.x < -B) c.x = B;
-      if (c.z > B) c.z = -B; if (c.z < -B) c.z = B;
+      const step = c.speed * dt;
+      if (c.vertical) {
+        c.mesh.position.z += step * Math.cos(c.angle);
+        if (c.mesh.position.z > 310) c.mesh.position.z = -310;
+        if (c.mesh.position.z < -310) c.mesh.position.z = 310;
+      } else {
+        c.mesh.position.x += step * Math.sin(c.angle);
+        if (c.mesh.position.x > 310) c.mesh.position.x = -310;
+        if (c.mesh.position.x < -310) c.mesh.position.x = 310;
+      }
+      c.sync();
+      c.updateDusk(duskT);
+      // Wheels spin.
+      for (const w of c.wheels) w.rotation.x += (c.speed * dt) / 0.36;
     }
+    for (const c of this.parked) c.updateDusk(duskT);
+    // Peds stroll, and flee with arms out when the player carjacks nearby.
     for (const p of this.peds) {
-      const sp = p.fleeing ? 3.4 : p.speed;
-      p.group.position.x += Math.sin(p.heading) * sp * dt;
-      p.group.position.z += Math.cos(p.heading) * sp * dt;
-      p.group.rotation.y = p.heading;
-      p.group.position.x = clamp(p.group.position.x, -B, B);
-      p.group.position.z = clamp(p.group.position.z, -B, B);
-      if (!p.fleeing && Math.random() < dt * 0.02) p.heading = Math.random() * Math.PI * 2;
+      const d = Math.hypot(p.group.position.x - playerPos.x, p.group.position.z - playerPos.z);
+      if (d < 14 && p.flee <= 0) p.flee = 3;
+      if (p.flee > 0) {
+        p.flee -= dt;
+        p.group.position.x += (p.group.position.x - playerPos.x) / Math.max(d, 1) * 4 * dt;
+        p.group.position.z += (p.group.position.z - playerPos.z) / Math.max(d, 1) * 4 * dt;
+        p.armL.rotation.z = 1.4;
+        p.armR.rotation.z = -1.4;
+        p.walkSpeed = 8;
+      } else {
+        p.armL.rotation.z = 0;
+        p.armR.rotation.z = 0;
+        p.walkSpeed = 1.2;
+        p.group.position.x = p.home.x + Math.sin(time * 0.12 + p.phase) * 6;
+        p.group.position.z = p.home.z + Math.cos(time * 0.09 + p.phase) * 6;
+        p.group.rotation.y = Math.atan2(Math.cos(time * 0.12 + p.phase) * 0.72, Math.cos(time * 0.09 + p.phase) * 0.54);
+      }
+      const swing = Math.sin(time * p.walkSpeed + p.phase) * 0.5;
+      p.legL.rotation.x = swing;
+      p.legR.rotation.x = -swing;
+      p.group.position.x = clamp(p.group.position.x, -315, 315);
+      p.group.position.z = clamp(p.group.position.z, -315, 315);
     }
   }
 }
