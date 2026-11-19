@@ -13,6 +13,10 @@ export const CONFIG = {
   BUILD_MIN_H: 10,
   BUILD_MAX_H: 64,
   BUILD_COLORS: [0xd8c9a3, 0xc9b18c, 0xe8dcc0, 0xb8a888, 0xd9c2a8, 0xcbb59a, 0xe0cfa8, 0xbf9f7a],
+  // Street life: how many traffic cars and pedestrians fill the city.
+  TRAFFIC_COUNT: 14,
+  PED_COUNT: 22,
+  PARKED_COUNT: 10,
   // Player on foot.
   WALK_SPEED: 7,
   RUN_SPEED: 12,
@@ -34,6 +38,8 @@ export const CONFIG = {
   HEAT_DECAY_PER_SEC: 0.06,
   POLICE_CAR_SPEED: 34,
   POLICE_FOOT_SPEED: 8,
+  // A police car that gets this close to the player's car is ramming it.
+  POLICE_RAM_DIST: 4.5,
   // Combat.
   PISTOL_DAMAGE: 34,
   PISTOL_AMMO: 12,

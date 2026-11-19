@@ -5,7 +5,7 @@
 // behind the player's heading. Health, ammo and the punch are all here.
 
 import * as THREE from 'three';
-import { CONFIG, clamp, approach } from './config.js';
+import { CONFIG, clamp } from './config.js';
 import { resolveBuildingCollision } from './world.js';
 
 export class Player {

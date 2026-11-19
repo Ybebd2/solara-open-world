@@ -6,7 +6,7 @@
 
 import * as THREE from 'three';
 import { CONFIG, makeRandom, pick, clamp } from './config.js';
-import { buildWorld, hitsBuilding } from './world.js';
+import { buildWorld } from './world.js';
 import { Car, Traffic, Pedestrians } from './vehicles.js';
 import { Player, FollowCamera } from './player.js';
 import { Wanted, Police } from './police.js';
@@ -28,8 +28,8 @@ const world = buildWorld(scene);
 const followCam = new FollowCamera(camera);
 
 const player = new Player(scene);
-const traffic = new Traffic(scene, world, 14);
-const pedestrians = new Pedestrians(scene, world, 22);
+const traffic = new Traffic(scene, world, CONFIG.TRAFFIC_COUNT);
+const pedestrians = new Pedestrians(scene, world, CONFIG.PED_COUNT);
 const police = new Police(scene, world);
 const wanted = new Wanted();
 const missions = new MissionManager();
@@ -41,7 +41,7 @@ const parkedCars = [];
 {
   const rand = makeRandom(555);
   const roads = world.roads.horizontal.concat(world.roads.vertical);
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < CONFIG.PARKED_COUNT; i++) {
     const road = pick(rand, roads);
     const along = -world.half + rand() * world.half * 2;
     const x = road.z !== undefined ? along : road.x + (rand() < 0.5 ? 4.5 : -4.5);
@@ -62,8 +62,12 @@ const game = {
   carStolen: false,
   wasWanted: false,
   quietTimer: 0,
+  ramCooldown: 0,
   keys: {},
   mouseDown: false,
+  // A click queues one shot the next frame consumes, so a quick press is
+  // never lost between frames (important when the frame rate is low).
+  shootQueued: false,
   camYaw: 0,
   camPitch: 0.32,
   pointerLocked: false,
@@ -122,6 +126,9 @@ const game = {
   },
 };
 
+// A handle for live inspection (automated playtests read the game state).
+window.__solara = game;
+
 // ----- Input -----
 window.addEventListener('keydown', (e) => {
   game.keys[e.code] = true;
@@ -140,11 +147,14 @@ window.addEventListener('keydown', (e) => {
   }
 });
 window.addEventListener('keyup', (e) => { game.keys[e.code] = false; });
-canvas.addEventListener('click', () => {
+canvas.addEventListener('mousedown', () => {
   if (game.state === 'playing' && !game.pointerLocked) {
     canvas.requestPointerLock?.();
   }
-  if (game.state === 'playing') game.mouseDown = true;
+  if (game.state === 'playing') {
+    game.mouseDown = true;
+    game.shootQueued = true;
+  }
 });
 window.addEventListener('mouseup', () => { game.mouseDown = false; });
 document.addEventListener('pointerlockchange', () => {
@@ -316,11 +326,16 @@ function frame() {
       run: !!k['ShiftLeft'] || !!k['ShiftRight'],
       jump: !!k['Space'],
       punch: !!k['KeyF'],
-      shoot: game.mouseDown,
+      shoot: game.mouseDown || game.shootQueued,
     };
-    // Quiet = no crime this frame; heat decays after a few quiet seconds.
-    const crime = game.carStolen && game.inCar ? false : false;
+    // A queued shot is consumed only when a shot actually fires (the
+    // cooldown being reset proves it); if the cooldown is not ready yet, the
+    // queue persists and the shot fires when it is. Shooting does not apply
+    // while driving, so a queue left over from a click in a car is dropped.
+    if (game.inCar) game.shootQueued = false;
+    // Heat decays after a few quiet seconds with no crime.
     game.quietTimer += dt;
+    game.ramCooldown = Math.max(0, game.ramCooldown - dt);
     wanted.update(dt, game.quietTimer > 4);
     if (wanted.stars > 0) game.wasWanted = true;
 
@@ -337,9 +352,15 @@ function frame() {
           sound.crash();
         }
       }
-      // Ramming a police car: a crime too.
+      // A police car ramming the player's car: a jolt, a crash sound, the
+      // player loses speed — and a collision with a police car is a crime,
+      // so the heat goes up. Throttled to one ram a second.
       for (const c of police.cars) {
-        if (Math.hypot(c.pos.x - game.playerCar.pos.x, c.pos.z - game.playerCar.pos.z) < 4.5 && Math.abs(game.playerCar.speed) > 8) {
+        const d = Math.hypot(c.pos.x - game.playerCar.pos.x, c.pos.z - game.playerCar.pos.z);
+        if (d < CONFIG.POLICE_RAM_DIST && game.ramCooldown <= 0) {
+          game.playerCar.speed *= 0.55;
+          game.ramCooldown = 1.0;
+          sound.crash();
           wanted.add(CONFIG.HEAT_PER_POLICE_HIT);
           game.quietTimer = 0;
         }
@@ -347,7 +368,11 @@ function frame() {
       followCam.updateDriving(game.playerCar.pos, game.playerCar.heading, game.playerCar.speed);
       sound.update(dt, game.playerCar.speed, wanted.stars);
     } else {
+      const cdBefore = player.cooldown;
       player.update(dt, input, world, onShoot, onPunch);
+      // A shot fired this frame if the cooldown was reset (it jumps back to
+      // 0.28); only then is the queued shot consumed.
+      if (player.cooldown > cdBefore) game.shootQueued = false;
       player.camYaw = game.camYaw;
       followCam.update(player.headPos(), game.camYaw, game.camPitch);
       sound.update(dt, player.moving ? (input.run ? 10 : 6) : 0, wanted.stars);
@@ -389,8 +414,9 @@ function frame() {
     }, () => bustPlayer('The Solara Police cornered you. Busted.'));
     if (player.health <= 0) bustPlayer('You were taken down. Busted.');
 
-    // Traffic and pedestrians keep the city alive.
-    traffic.update(dt);
+    // Traffic and pedestrians keep the city alive. The traffic AI is handed
+    // the player's car so it never fights the player's steering.
+    traffic.update(dt, game.playerCar);
     pedestrians.update(dt);
     // Clouds drift.
     for (const c of world.clouds) {

@@ -96,8 +96,7 @@ export function buildWorld(scene) {
   for (const z of roadLines) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(GRID * pitch + ROAD, ROAD), roadMat);
     m.rotation.x = -Math.PI / 2;
-    m.position.set(0, 0, z + ROAD / 2 - ROAD / 2);
-    m.position.z = z;
+    m.position.set(0, 0, z);
     m.receiveShadow = true;
     group.add(m);
     roads.horizontal.push({ z, x0: -half - ROAD, x1: half + ROAD });

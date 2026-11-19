@@ -1,11 +1,12 @@
 // SOLARA — vehicles and the people on the street. Cars are built from boxes
 // and cylinders in code (body, cabin, wheels, lights), so the game needs no
 // model files. Player driving is arcade physics: accelerate, brake, steer,
-// with a little drift. Traffic cars follow the road grid and turn at
-// intersections; pedestrians stroll the sidewalks and run when scared.
+// with a little drift, and cars slide along building walls instead of
+// stopping dead. Traffic cars follow the road grid and turn at intersections;
+// pedestrians stroll the sidewalks and run when scared.
 
 import * as THREE from 'three';
-import { CONFIG, makeRandom, pick, clamp, angleDiff } from './config.js';
+import { CONFIG, makeRandom, pick, clamp } from './config.js';
 import { hitsBuilding, resolveBuildingCollision } from './world.js';
 
 const CAR_COLORS = [0xc0392b, 0x2e6db4, 0xe8e8e8, 0x222222, 0xf5c542, 0x7a4a9e, 0x2e8b57, 0xd96c2b, 0x5a6b7a, 0x9e2b25];
@@ -74,26 +75,33 @@ export class Car {
     scene.add(this.mesh);
   }
 
-  // Drive with player input: { forward, back, left, right }.
+  // Drive with player input: { f, b, l, r } (the same shape the frame loop
+  // builds for the on-foot player). A car that meets a building slides along
+  // the wall (try the full step, then X only, then Z only) instead of
+  // stopping dead, so a chase can go around a block.
   drive(dt, input, world) {
     const top = this.isPolice ? CONFIG.POLICE_CAR_SPEED : CONFIG.CAR_TOP_SPEED;
-    if (input.forward) this.speed += CONFIG.CAR_ACCEL * dt;
-    if (input.back) this.speed -= (this.speed > 0.5 ? CONFIG.CAR_BRAKE : CONFIG.CAR_ACCEL * 0.6) * dt;
-    if (!input.forward && !input.back) this.speed *= Math.max(0, 1 - 0.8 * dt);
+    if (input.f) this.speed += CONFIG.CAR_ACCEL * dt;
+    if (input.b) this.speed -= (this.speed > 0.5 ? CONFIG.CAR_BRAKE : CONFIG.CAR_ACCEL * 0.6) * dt;
+    if (!input.f && !input.b) this.speed *= Math.max(0, 1 - 0.8 * dt);
     this.speed = clamp(this.speed, -CONFIG.CAR_REVERSE_SPEED, top);
-    const steerTarget = (input.left ? 1 : 0) - (input.right ? 1 : 0);
+    const steerTarget = (input.l ? 1 : 0) - (input.r ? 1 : 0);
     this.steer += (steerTarget - this.steer) * Math.min(1, 8 * dt);
     const dir = this.speed >= 0 ? 1 : -1;
     this.heading += this.steer * CONFIG.CAR_STEER * dt * dir * Math.min(1, Math.abs(this.speed) / 8);
     const nx = this.pos.x + Math.sin(this.heading) * this.speed * dt;
     const nz = this.pos.z + Math.cos(this.heading) * this.speed * dt;
-    // Keep the car out of buildings; a bump kills some speed.
-    const before = { x: this.pos.x, z: this.pos.z };
-    this.pos.x = nx;
-    this.pos.z = nz;
-    if (hitsBuilding(world.buildings, this.pos.x, this.pos.z, 2.2)) {
-      this.pos.x = before.x;
-      this.pos.z = before.z;
+    // Slide along buildings: full step, else X only, else Z only, else stay.
+    if (!hitsBuilding(world.buildings, nx, nz, 2.2)) {
+      this.pos.x = nx;
+      this.pos.z = nz;
+    } else if (!hitsBuilding(world.buildings, nx, this.pos.z, 2.2)) {
+      this.pos.x = nx;
+      this.speed *= 0.7;
+    } else if (!hitsBuilding(world.buildings, this.pos.x, nz, 2.2)) {
+      this.pos.z = nz;
+      this.speed *= 0.7;
+    } else {
       this.speed *= 0.4;
     }
     // Keep the car inside the city.
@@ -118,7 +126,9 @@ export class Car {
 
 // Traffic: cars that follow the road grid. Each one drives along one road
 // (horizontal or vertical) in one direction; at an intersection it sometimes
-// turns onto the crossing road; at the city edge it turns back.
+// turns onto the crossing road; at the city edge it turns back. The player's
+// car is skipped: once you steal a traffic car, the AI hands it to you and
+// never fights your steering.
 export class Traffic {
   constructor(scene, world, count = 14) {
     this.scene = scene;
@@ -146,6 +156,7 @@ export class Traffic {
     }
     const car = new Car(this.scene, x, z, heading, pick(this.rand, CAR_COLORS));
     car.speed = 9 + this.rand() * 7;
+    car.baseSpeed = car.speed;
     car.axis = horizontal ? 'x' : 'z';
     car.dir = dir;
     car.road = road;
@@ -164,11 +175,13 @@ export class Traffic {
     return false;
   }
 
-  update(dt) {
+  // playerCar: the car the player is driving, if it is a traffic car — the
+  // AI leaves it alone so the player is the one driving.
+  update(dt, playerCar = null) {
     const { roads, half } = this.world;
     for (const car of this.cars) {
-      const target = 9 + (car.baseSpeed ?? 0);
-      car.baseSpeed = car.baseSpeed ?? 9 + this.rand() * 0;
+      if (playerCar && car === playerCar) continue;
+      const target = car.baseSpeed ?? 9;
       const want = this.carAhead(car) ? 0 : target;
       car.speed += (want - car.speed) * Math.min(1, 2 * dt);
       // Turn at an intersection, sometimes.
@@ -210,6 +223,8 @@ export class Pedestrians {
     this.world = world;
     this.list = [];
     this.rand = makeRandom(4242);
+    this.fleeX = 0;
+    this.fleeZ = 0;
     const shirtColors = [0xe74c3c, 0x3498db, 0xf1c40f, 0x9b59b6, 0x1abc9c, 0xe67e22, 0xecf0f1, 0x2ecc71];
     for (let i = 0; i < count; i++) {
       const g = new THREE.Group();
@@ -237,7 +252,10 @@ export class Pedestrians {
     }
   }
 
+  // Scare everyone near (x, z): they run AWAY from that point for 3 seconds.
   scare(x, z, radius = 18) {
+    this.fleeX = x;
+    this.fleeZ = z;
     for (const p of this.list) {
       const d = Math.hypot(p.x - x, p.z - z);
       if (d < radius) p.scared = 3;
@@ -248,8 +266,8 @@ export class Pedestrians {
     for (const p of this.list) {
       if (p.scared > 0) {
         p.scared -= dt;
-        // Run away from the last scare point.
-        p.heading = Math.atan2(p.x - (this.fleeX ?? p.x), p.z - (this.fleeZ ?? p.z));
+        // Run away from the scare point.
+        p.heading = Math.atan2(p.x - this.fleeX, p.z - this.fleeZ);
         p.speed = 4.5;
       } else {
         p.speed = 1.4;

@@ -12,8 +12,6 @@
 //   3-mission — on foot at a downtown intersection, traffic passing.
 //   4-chase  — a three-star chase on the beach road, police closing in.
 
-import * as THREE from 'three';
-import { CONFIG } from './config.js';
 import { Car } from './vehicles.js';
 
 export const SHOTS = ['1-start', '2-drive', '3-mission', '4-chase'];

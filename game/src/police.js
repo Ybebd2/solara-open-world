@@ -88,7 +88,6 @@ export class Police {
     this.rand = makeRandom(31337);
     this.spawnTimer = 0;
     this.bustTimer = 0; // how long a police car has held the on-foot player
-    this.sirenPhase = 0;
   }
 
   // How many police cars and officers the current stars call for.
@@ -137,19 +136,40 @@ export class Police {
       const o = this.officers.pop();
       o.dispose(this.scene);
     }
-    // Police cars chase the player: steer toward them and accelerate.
+    // Police cars chase the player: steer toward them and accelerate. The
+    // wall-slide in Car.drive lets a chase go around a block instead of
+    // stopping dead on a building.
     for (const car of this.cars) {
       const dx = playerPos.x - car.pos.x;
       const dz = playerPos.z - car.pos.z;
       const dist = Math.hypot(dx, dz);
       const targetHeading = Math.atan2(dx, dz);
       const turn = angleDiff(car.heading, targetHeading);
-      const input = {
-        forward: dist > 4,
-        back: false,
-        left: turn > 0.12,
-        right: turn < -0.12,
-      };
+      // Unstuck: if the car wants to move but its speed is near zero for a
+      // second (it is nose-first into a building), reverse and turn hard for
+      // a moment so it goes around the block instead of grinding the wall.
+      // Speed, not per-frame movement, is the test: at a low frame rate a
+      // car accelerating normally still moves little per frame.
+      if (dist > 4 && Math.abs(car.speed) < 1.0) {
+        car._stuck = (car._stuck ?? 0) + dt;
+      } else {
+        car._stuck = 0;
+      }
+      car._unstuck = Math.max(0, (car._unstuck ?? 0) - dt);
+      if (car._stuck > 1.0) {
+        car._unstuck = 0.9;
+        car._stuck = 0;
+        // Turn a random way, so the car does not loop on the same wall.
+        car._unstuckDir = this.rand() < 0.5 ? 1 : -1;
+      }
+      const input = car._unstuck > 0
+        ? { f: false, b: true, l: car._unstuckDir > 0, r: car._unstuckDir < 0 }
+        : {
+            f: dist > 4,
+            b: false,
+            l: turn > 0.12,
+            r: turn < -0.12,
+          };
       car.drive(dt, input, this.world);
       // Ramming the on-foot player: a bump that hurts and can bust them.
       if (onFoot && dist < 3.2) {
@@ -164,7 +184,6 @@ export class Police {
     for (const o of this.officers) {
       o.update(dt, playerPos, onPlayerHit);
     }
-    this.sirenPhase += dt;
   }
 
   clear() {
