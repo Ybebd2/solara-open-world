@@ -299,11 +299,13 @@ function bustPlayer(reason) {
 // ----- The frame loop -----
 const clock = new THREE.Clock();
 let firstFrame = true;
+let framesRendered = 0;
 
 function frame() {
   requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.05);
-  if (game.state === 'playing') {
+  // Screenshot mode: the scene is staged and frozen; just render it.
+  if (game.state === 'playing' && !game.shotMode) {
     const k = game.keys;
     const input = {
       f: !!k['KeyW'] || !!k['ArrowUp'],
@@ -401,6 +403,9 @@ function frame() {
     hud.tick(dt);
   }
   renderer.render(scene, camera);
+  framesRendered += 1;
+  // Screenshot mode: tell the capture script the staged scene is ready.
+  if (shot && framesRendered > 3) window.__shotReady = true;
   if (firstFrame) {
     firstFrame = false;
     menus.hideLoading();
@@ -410,7 +415,8 @@ function frame() {
 // ----- Boot -----
 const shot = shotFromUrl();
 if (shot) {
-  // Screenshot mode: no start screen, stage the shot and render.
+  // Screenshot mode: no start screen, stage the shot and render it frozen.
+  game.shotMode = true;
   menus.hideStart();
   menus.hideLoading();
   hud.show();
