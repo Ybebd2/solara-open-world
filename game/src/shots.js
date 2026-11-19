@@ -43,6 +43,23 @@ export function applyShot(game, shot) {
   const places = world.places;
   hud.show();
   game.state = 'playing';
+  // Parked cars stay out of the shot: only the staged cars are shown.
+  for (const c of game.parkedCars) c.mesh.visible = false;
+  // Hide any traffic car that would sit right in front of the shot camera.
+  const hideNearCamera = (list, radius) => {
+    for (const c of list) {
+      const p = c.pos ?? { x: c.x, z: c.z };
+      if (Math.hypot(p.x - camera.position.x, p.z - camera.position.z) < radius) {
+        (c.mesh ?? c.group).visible = false;
+      }
+    }
+  };
+  // Hide pedestrians standing on the shot's focus (a car or the player).
+  const hidePedsNear = (x, z, radius) => {
+    for (const p of game.pedestrians.list) {
+      if (Math.hypot(p.x - x, p.z - z) < radius) p.mesh.visible = false;
+    }
+  };
   // No pointer lock in a shot; the camera is placed by hand and frozen.
   const setCamera = (x, y, z, tx, ty, tz) => {
     camera.position.set(x, y, z);
@@ -73,18 +90,21 @@ export function applyShot(game, shot) {
     missions.index = 1;
     game.cash = 400;
     // Side-on: the player's car centre-right, the police behind it to the left.
-    setCamera(-35, 7, midRoadZ + 16, -80, 2, midRoadZ);
+    setCamera(-40, 8, midRoadZ + 20, -80, 2, midRoadZ - 2);
+    hideNearCamera(traffic.cars, 30);
   } else if (shot === '3-mission') {
-    // On foot at a downtown intersection, a traffic car passing, the city ahead.
-    player.place(0, midRoadZ - 2, Math.PI);
+    // On foot mid-street (no intersection, so no streetlight in the way),
+    // a traffic car coming down the road toward the player, the city ahead.
+    player.place(0, midRoadZ, Math.PI);
     missions.index = 3;
     wanted.clear();
     game.cash = 1200;
     player.ammo = 9;
-    const t = new Car(game.scene, 26, midRoadZ, Math.PI / 2, 0x2e6db4);
+    const t = new Car(game.scene, 2.2, midRoadZ - 26, 0, 0x2e6db4);
     t.speed = 12;
     traffic.cars.push(t);
-    setCamera(0 + 13, 6.5, midRoadZ + 15, 0, 2, midRoadZ - 22);
+    setCamera(10, 6, midRoadZ + 14, 0, 1.5, midRoadZ - 6);
+    hideNearCamera(traffic.cars, 30);
     hud.toast('The Delivery — north gate, 90 seconds', 10);
   } else if (shot === '4-chase') {
     // A three-star chase east along the beach road, police closing in.
@@ -96,11 +116,12 @@ export function applyShot(game, shot) {
     const p2 = new Car(game.scene, -102, beachRoadZ + 4, Math.PI / 2, 0x111111, true);
     p2.speed = 30;
     police.cars.push(p2);
-    police.spawnOfficerNear(-30, beachRoadZ + 8);
     missions.index = 4;
     game.cash = 2500;
     // Side-on: the player's car centre-right, the police closing in to the left.
-    setCamera(-25, 7, beachRoadZ + 16, -75, 2, beachRoadZ);
+    setCamera(-30, 8, beachRoadZ + 18, -78, 2, beachRoadZ - 2);
+    hideNearCamera(traffic.cars, 30);
+    hidePedsNear(-50, beachRoadZ, 12);
   }
   // Refresh the HUD once so the shot shows the staged state.
   game.refreshHud();

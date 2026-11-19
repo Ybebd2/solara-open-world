@@ -54,7 +54,8 @@ const parkedCars = [];
 // The game object the screenshot stager and the loop share.
 const game = {
   state: 'menu',
-  scene, camera, world, player, traffic, police, wanted, missions, hud, sound,
+  scene, camera, world, player, traffic, pedestrians, police, wanted, missions, hud, sound,
+  parkedCars,
   cash: 0,
   inCar: false,
   playerCar: null,
