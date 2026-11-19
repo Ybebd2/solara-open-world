@@ -1,7 +1,7 @@
 // SOLARA — audio: WebAudio synth — engine hum, radio arpeggios, siren,
 // gunshot, cash. setEngine coerces non-finite speed to 0 before
-// setTargetAtTime so a NaN can never flood page errors.
-// Built fresh for the @witty-meteor-32 build.
+// setTargetAtTime so a NaN can never flood the page with errors.
+// Re-authored for the @witty-meteor-32 recording-M build.
 
 export class AudioEngine {
   constructor() {
@@ -9,6 +9,9 @@ export class AudioEngine {
     this.master = null;
     this.engineOsc = null;
     this.engineGain = null;
+    this.sirenOsc = null;
+    this.sirenLfo = null;
+    this.sirenGain = null;
     this.radioTimer = null;
     this.radioStep = 0;
     this.station = 0;
@@ -16,7 +19,10 @@ export class AudioEngine {
   }
 
   ensure() {
-    if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
+    if (this.ctx) {
+      if (this.ctx.state === 'suspended') this.ctx.resume();
+      return;
+    }
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       this.ctx = new AC();
@@ -28,18 +34,23 @@ export class AudioEngine {
       this.engineOsc.type = 'sawtooth';
       this.engineOsc.frequency.value = 55;
       const lp = this.ctx.createBiquadFilter();
-      lp.type = 'lowpass'; lp.frequency.value = 320;
+      lp.type = 'lowpass';
+      lp.frequency.value = 320;
       this.engineGain = this.ctx.createGain();
       this.engineGain.gain.value = 0;
-      this.engineOsc.connect(lp); lp.connect(this.engineGain); this.engineGain.connect(this.master);
+      this.engineOsc.connect(lp);
+      lp.connect(this.engineGain);
+      this.engineGain.connect(this.master);
       this.engineOsc.start();
-    } catch (e) { /* audio unavailable — game stays silent */ }
+    } catch (e) {
+      /* audio unavailable — the game stays silent */
+    }
   }
 
   setEngine(speed) {
     if (!this.ctx || !this.engineGain) return;
-    // Coerce non-finite speeds to 0: a NaN here would throw on setTargetAtTime
-    // and flood the page with errors every frame.
+    // Coerce non-finite speeds to 0: a NaN here would throw on
+    // setTargetAtTime and flood the page with errors every frame.
     const s = Number.isFinite(speed) ? speed : 0;
     const t = this.ctx.currentTime;
     this.engineGain.gain.setTargetAtTime(0.015 + Math.min(0.09, Math.abs(s) * 0.003), t, 0.1);
@@ -65,8 +76,10 @@ export class AudioEngine {
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(0.06, this.ctx.currentTime);
     g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.22);
-    o.connect(g); g.connect(this.master);
-    o.start(); o.stop(this.ctx.currentTime + 0.24);
+    o.connect(g);
+    g.connect(this.master);
+    o.start();
+    o.stop(this.ctx.currentTime + 0.24);
   }
 
   siren(on) {
@@ -79,14 +92,23 @@ export class AudioEngine {
       g.gain.value = 0.035;
       const lfo = this.ctx.createOscillator();
       lfo.frequency.value = 0.9;
-      const lg = this.ctx.createGain(); lg.gain.value = 260;
-      lfo.connect(lg); lg.connect(this.sirenOsc.frequency);
-      this.sirenOsc.connect(g); g.connect(this.master);
-      this.sirenOsc.start(); lfo.start();
-      this.sirenLfo = lfo; this.sirenGain = g;
+      const lg = this.ctx.createGain();
+      lg.gain.value = 260;
+      lfo.connect(lg);
+      lg.connect(this.sirenOsc.frequency);
+      this.sirenOsc.connect(g);
+      g.connect(this.master);
+      this.sirenOsc.start();
+      lfo.start();
+      this.sirenLfo = lfo;
+      this.sirenGain = g;
     } else if (!on && this.sirenOsc) {
-      try { this.sirenOsc.stop(); this.sirenLfo.stop(); } catch (e) {}
-      this.sirenOsc = null; this.sirenLfo = null;
+      try {
+        this.sirenOsc.stop();
+        this.sirenLfo.stop();
+      } catch (e) {}
+      this.sirenOsc = null;
+      this.sirenLfo = null;
     }
   }
 
@@ -98,8 +120,10 @@ export class AudioEngine {
     for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
-    const g = this.ctx.createGain(); g.gain.value = 0.5;
-    src.connect(g); g.connect(this.master);
+    const g = this.ctx.createGain();
+    g.gain.value = 0.5;
+    src.connect(g);
+    g.connect(this.master);
     src.start();
   }
 
@@ -107,13 +131,16 @@ export class AudioEngine {
     if (!this.ctx || this.muted) return;
     [880, 1318].forEach((f, i) => {
       const o = this.ctx.createOscillator();
-      o.type = 'sine'; o.frequency.value = f;
+      o.type = 'sine';
+      o.frequency.value = f;
       const g = this.ctx.createGain();
       const t0 = this.ctx.currentTime + i * 0.09;
       g.gain.setValueAtTime(0.12, t0);
       g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.25);
-      o.connect(g); g.connect(this.master);
-      o.start(t0); o.stop(t0 + 0.3);
+      o.connect(g);
+      g.connect(this.master);
+      o.start(t0);
+      o.stop(t0 + 0.3);
     });
   }
 

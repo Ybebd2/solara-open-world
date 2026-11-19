@@ -1,6 +1,6 @@
 # SOLARA — an open-world crime game
 
-**gta6-01 "Make GTA 6" · built fresh under @witty-meteor-32**
+**gta6-01 "Make GTA 6" · re-authored under @witty-meteor-32 (recording M)**
 
 Kai Mercer is back in Solara, a golden-hour coastal city. Eight jobs from
 fixer Lupe stand between him and the top of the city — steal the cars,

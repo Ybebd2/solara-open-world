@@ -1,10 +1,12 @@
-// SOLARA — dependency-free static server. Serves the repo root; .ts files
-// are served as JavaScript (main.ts is plain JS). Usage: node serve.ts <port>.
-// Written fresh for @witty-meteor-32.
+// SOLARA — zero-dependency static file server. Serves the repo root so
+// the game runs offline in a browser; .ts files are served as
+// JavaScript (both main.ts files are plain JS). Usage:
+//   node serve.ts <port>
+// Defaults to port 8901; the screenshot harness uses 8903.
+// Re-authored for the @witty-meteor-32 recording-M build.
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(process.cwd());
 const PORT = Number(process.argv[2] || 8901);
@@ -29,10 +31,19 @@ const server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     let p = decodeURIComponent(url.pathname);
     if (p === '/') p = '/game/index.html';
+    // Strip any leading ../ segments, then require the result to stay
+    // inside the repo root — no directory traversal.
     const file = resolve(join(ROOT, normalize(p).replace(/^(\.\.[\/\\])+/, '')));
-    if (!file.startsWith(ROOT)) { res.writeHead(403); res.end('forbidden'); return; }
+    if (!file.startsWith(ROOT)) {
+      res.writeHead(403);
+      res.end('forbidden');
+      return;
+    }
     const data = await readFile(file);
-    res.writeHead(200, { 'content-type': MIME[extname(file)] || 'application/octet-stream', 'cache-control': 'no-store' });
+    res.writeHead(200, {
+      'content-type': MIME[extname(file)] || 'application/octet-stream',
+      'cache-control': 'no-store',
+    });
     res.end(data);
   } catch (e) {
     res.writeHead(404, { 'content-type': 'text/plain' });

@@ -1,19 +1,20 @@
-// SOLARA — shots: the four dossier shots. The game freezes its loop in
-// shot mode (main.renderShot stops the clock) so every shot is a still.
-// Staging is pure geometry + HUD state: shot 1/2 are Kai-first, shot 4
-// is sky-first; no shot is car-only. Built fresh for the
-// @witty-meteor-32 build.
+// SOLARA — staged screenshot shots. Four compositions that prove the
+// game: Kai on foot with his weapon out, a 3-star wanted chase, a
+// vehicle detail pass at dusk, and a 4-star helicopter nightfall. The
+// game freezes its loop in shot mode (main holds the clock still) so
+// every shot is a still frame. Staging is pure geometry + HUD state:
+// shots 1–2 are Kai-first, shot 4 is sky-first; no shot is car-only.
+// Re-authored for the @witty-meteor-32 recording-M build.
 import { dist2d } from './config.js';
 
-export class Shots {
+export class ShotManager {
   constructor(game) {
     this.game = game;
-    this.world = game.world;
     // Shot 1: Kai on foot at the BEACH ROAD curb, arms in two-hand aim
     // toward an officer 18 m north. Camera WEST of Kai, LOW (1.15 m),
     // looking east-north — a profile view, so the bright silver pistol
-    // and BOTH extended arms read clearly at full frame.
-    // (Dead-behind camera hid the gun as a 2 px sliver behind the torso.)
+    // and BOTH extended arms read clearly at full frame. (A dead-behind
+    // camera hid the gun as a 2 px sliver behind the torso.)
     this.s1 = {
       camPos: [-162.3, 1.15, 5.2],
       lookAt: [-160.2, 1.35, 28],
@@ -72,19 +73,53 @@ export class Shots {
         { name: 'AIR-1', dist: 6, status: 'AIR' },
       ],
     };
-    this.clusterAnchorZ = 55; // car cluster anchored on BEACH ROAD
+    this.shotMode = false;
+    this.shotIndex = 0;
+    this.shotTimer = 0;
+    this.shotReadySent = false;
+    this.shotId = null;
+  }
+
+  // Start a shot by index (from the URL ?shot= or the /shots endpoint).
+  // Dispatches to the per-shot stager, then arms the settle timer —
+  // the harness screenshots once __solaraShotReady fires.
+  startShot(i) {
+    const stages = [() => this.stage1(), () => this.stage2(), () => this.stage3(), () => this.stage4()];
+    if (i < 0 || i >= stages.length) return false;
+    this.shotMode = true;
+    this.shotIndex = i;
+    this.shotId = i + 1;
+    this.shotReadySent = false;
+    stages[i]();
+    this.shotTimer = 1200; // ms of settle before the frame is "ready"
+    return true;
+  }
+
+  // Shot settle: counts down in real ms; when it elapses, fire
+  // __solaraShotReady ONCE (guarded by shotReadySent) so the
+  // screenshot harness knows the frame is ready to capture.
+  update(dt) {
+    if (!this.shotMode || this.shotReadySent) return;
+    this.shotTimer -= dt * 1000;
+    if (this.shotTimer <= 0) {
+      this.shotReadySent = true;
+      if (typeof window !== 'undefined') {
+        window.__solaraShotReady = true;
+        window.__solaraShotId = this.shotId;
+      }
+    }
   }
 
   // Move a vehicle to an exact pose: snap position + heading, clear
-  // physics, rebuild mesh. Used by the parked-car cluster in shots 3/4.
-  // (Car.x/z are getters on mesh.position — set the mesh, never v.x.)
+  // speed, rebuild the mesh transform. Used by the parked-car cluster
+  // in shots 3/4. (Car.x/z are getters on mesh.position — set the mesh,
+  // never v.x.)
   placeVehicle(v, x, z, heading) {
     v.heading = heading;
-    v.speed = 0; v.velX = 0; v.velZ = 0; v.throttle = 0;
-    v.parked = false;
+    v.speed = 0;
     if (v.mesh) v.mesh.position.set(x, 0.3, z);
     if (v.mesh) v.mesh.rotation.y = heading + Math.PI;
-    if (v.updateLights) v.updateLights();
+    if (v.setDusk) v.setDusk(1);
   }
 
   // Clear all wanted heat and police, then restore stars if given.
@@ -117,8 +152,8 @@ export class Shots {
   // two sedans — six distinct types in one frame, bumper gaps 2–4 m.
   // `zOff` shifts the whole cluster north so every car sits in front
   // of the shot camera (shot 3's camera is at z=57 — the unshifted
-  // cluster would be behind it). Returns { fleePed } — one pedestrian
-  // mid-flee, arms out.
+  // cluster would be behind it). Returns { list, fleePed } — one
+  // pedestrian mid-flee, arms out.
   clusterCars(zOff = 0) {
     const g = this.game;
     const list = [];
@@ -160,7 +195,7 @@ export class Shots {
     g.player.setWeapon(2);
     g.player.weaponAmmo = s.ammo;
     g.player.setAim(true);
-    const officer = g.police.spawnOfficerAt(s.officer.x, s.officer.z);
+    g.police.spawnOfficerAt(s.officer.x, s.officer.z);
     g.missions.index = s.missionIndex;
     g.missions.startMission(s.missionIndex);
     g.hours = s.clock;
@@ -191,14 +226,19 @@ export class Shots {
     g.wanted.evading = s.evading;
     g.wanted.hidden = s.hidden;
     g.wanted.searching = true;
-    const c = this.placeCruiserForShot();
-    const officer = g.police.spawnOfficerAt(s.officer.x, s.officer.z);
+    this.placeCruiserForShot();
+    g.police.spawnOfficerAt(s.officer.x, s.officer.z);
     g.police.stagedUnits = s.stagedUnits.slice();
     g.missions.index = 1;
     g.missions.startMission(1);
     g.hours = s.clock;
     g.money = 1250;
     g.respect = 67;
+    // Random traffic can park or drive right between the camera and Kai
+    // (a van blocked him in one render) — hide any that wandered into
+    // the sightline corridor. The cruiser and officer are police, not
+    // traffic, so they stay; cars behind Kai (z > 52) stay too.
+    this.hideCorridor(-172, -150, 36, 52);
     // The mission-start toast would cover the 4th PCPD row — hide it.
     g.hud.hideToast();
     g.hud.say('They’re all over the beach road, Kai. Lose them — or lose the coupe.', 'Lupe');
@@ -221,7 +261,6 @@ export class Shots {
     this.placeVehicle(car, s.car.x, s.car.z, s.car.heading);
     car.speed = s.car.speed;
     car.gear = 3; // drive() never runs in shot mode — set the gear directly
-    car.throttle = 1;
     g.player.enterCar(car);
     g.hours = s.clock;
     g.station = 2; // SOLARA 98.3 · Night Drive

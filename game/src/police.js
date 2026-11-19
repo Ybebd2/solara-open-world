@@ -1,5 +1,6 @@
 // SOLARA — police: cruiser chase/ram AI, officers on foot, helicopter
-// with spotlight at 3+ stars. Built fresh for the @witty-meteor-32 build.
+// with spotlight at 3+ stars. Re-authored for the @witty-meteor-32
+// recording-M build.
 import * as THREE from '../vendor/three.module.min.js';
 import { Car } from './vehicles.js';
 import { PCPD_UNITS, PCPD_AIR, clamp, dist2d, rand } from './config.js';
@@ -7,10 +8,11 @@ import { PCPD_UNITS, PCPD_AIR, clamp, dist2d, rand } from './config.js';
 export class Police {
   constructor(scene) {
     this.scene = scene;
-    this.cruisers = [];   // Car (police type)
-    this.officers = [];   // { mesh, health, name }
-    this.heli = null;     // { group, cone, pool }
+    this.cruisers = []; // Car (police type)
+    this.officers = []; // { mesh, health, name }
+    this.heli = null; // { group, cone, pool }
     this.heliDisc = null;
+    this.heliRotor = null;
     this.airDeployed = false; // true while the heli is up (3+ stars)
     this.unitNames = PCPD_UNITS;
     this.sirenPhase = 0;
@@ -52,14 +54,19 @@ export class Police {
     const uni = new THREE.MeshStandardMaterial({ color: 0x1c2a44, roughness: 0.85 });
     const skin = new THREE.MeshStandardMaterial({ color: 0xc99a72, roughness: 0.7 });
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.34), uni);
-    torso.position.y = 1.05; torso.castShadow = true; g.add(torso);
+    torso.position.y = 1.05;
+    torso.castShadow = true;
+    g.add(torso);
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 10, 8), skin);
-    head.position.y = 1.68; g.add(head);
+    head.position.y = 1.68;
+    g.add(head);
     const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, 0.1, 10), uni);
-    cap.position.y = 1.86; g.add(cap);
+    cap.position.y = 1.86;
+    g.add(cap);
     for (const lx of [-0.15, 0.15]) {
       const leg = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.72, 0.26), uni);
-      leg.position.set(lx, 0.36, 0); g.add(leg);
+      leg.position.set(lx, 0.36, 0);
+      g.add(leg);
     }
     g.position.set(x, 0, z);
     this.scene.add(g);
@@ -74,13 +81,17 @@ export class Police {
     const g = new THREE.Group();
     const bodyMat = new THREE.MeshStandardMaterial({ color: 0x22242c, roughness: 0.5, metalness: 0.4 });
     const body = new THREE.Mesh(new THREE.BoxGeometry(3.4, 1.4, 5.2), bodyMat);
-    body.castShadow = true; g.add(body);
+    body.castShadow = true;
+    g.add(body);
     const glass = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.9, 1.4), new THREE.MeshStandardMaterial({ color: 0x88bbdd, roughness: 0.15, metalness: 0.6 }));
-    glass.position.set(0, 0.2, -2.2); g.add(glass);
+    glass.position.set(0, 0.2, -2.2);
+    g.add(glass);
     const tail = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 4.4), bodyMat);
-    tail.position.set(0, 0.3, 4.2); g.add(tail);
+    tail.position.set(0, 0.3, 4.2);
+    g.add(tail);
     const rotor = new THREE.Mesh(new THREE.BoxGeometry(11, 0.08, 0.5), new THREE.MeshStandardMaterial({ color: 0x111111 }));
-    rotor.position.y = 1.1; g.add(rotor);
+    rotor.position.y = 1.1;
+    g.add(rotor);
     this.heliRotor = rotor;
     // Rotor disc: a translucent blurred ring so the spinning rotor reads
     // as a disc in motion, not a single thin bar.
@@ -88,18 +99,23 @@ export class Police {
       new THREE.CircleGeometry(5.5, 24),
       new THREE.MeshBasicMaterial({ color: 0x111111, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false })
     );
-    disc.rotation.x = -Math.PI / 2; disc.position.y = 1.12; g.add(disc);
+    disc.rotation.x = -Math.PI / 2;
+    disc.position.y = 1.12;
+    g.add(disc);
     this.heliDisc = disc;
     const tailRotor = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.2, 0.4), new THREE.MeshStandardMaterial({ color: 0x111111 }));
-    tailRotor.position.set(0.45, 0.4, 6.2); g.add(tailRotor);
+    tailRotor.position.set(0.45, 0.4, 6.2);
+    g.add(tailRotor);
     // Landing skids: two rails under the body on short struts.
     const skidMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6, metalness: 0.5 });
     for (const sx of [-0.9, 0.9]) {
       const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 4.6), skidMat);
-      rail.position.set(sx, -1.0, 0); g.add(rail);
+      rail.position.set(sx, -1.0, 0);
+      g.add(rail);
       for (const sz of [-1.4, 1.4]) {
         const strut = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.5, 0.1), skidMat);
-        strut.position.set(sx, -0.75, sz); g.add(strut);
+        strut.position.set(sx, -0.75, sz);
+        g.add(strut);
       }
     }
     // Spotlight cone + ground pool, sized for the default hover (30 m)
@@ -107,12 +123,16 @@ export class Police {
     const coneGeo = new THREE.ConeGeometry(7, 30, 16, 1, true);
     const coneMat = new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false });
     const cone = new THREE.Mesh(coneGeo, coneMat);
-    cone.position.y = -15; cone.rotation.x = Math.PI; g.add(cone);
+    cone.position.y = -15;
+    cone.rotation.x = Math.PI;
+    g.add(cone);
     const pool = new THREE.Mesh(
       new THREE.CircleGeometry(7, 20),
       new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 0.3, depthWrite: false })
     );
-    pool.rotation.x = -Math.PI / 2; pool.position.y = -29.5; g.add(pool);
+    pool.rotation.x = -Math.PI / 2;
+    pool.position.y = -29.5;
+    g.add(pool);
     g.position.set(0, 30, 0);
     this.scene.add(g);
     this.heli = { group: g, cone, pool, spotAlt: 30 };
@@ -126,8 +146,10 @@ export class Police {
     h.group.position.set(x, y, z);
     return h;
   }
-  // the cone runs belly-to-ground and the pool is ~3 car-widths across
-  // (radius 3 m) — a readable lit ellipse, never a white washout.
+
+  // Resize the spotlight for a hover at `alt` metres: the cone runs
+  // belly-to-ground and the pool is ~3 car-widths across (radius 3 m)
+  // — a readable lit ellipse, never a white washout.
   setHeliSpot(alt) {
     if (!this.heli) return;
     const { cone, pool } = this.heli;

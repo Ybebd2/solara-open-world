@@ -4,7 +4,8 @@
 // bottom-right; dialogue bottom-center; context prompt; map overlay;
 // title screen. DOM refs all use the *El suffix — no element ever
 // shadows a method (the toast() method uses this.toastEl, never a
-// property named toast). Built fresh for the @witty-meteor-32 build.
+// property named toast). Re-authored for the @witty-meteor-32
+// recording-M build.
 import { WEAPONS, RADIO, MISSIONS, DISTRICTS, LANDMARKS, SIDE_JOBS, standingLabel, dist2d } from './config.js';
 
 export class HUD {
@@ -272,29 +273,44 @@ export class HUD {
       brandt: { hair: '#2a2a30', streak: null, frame: '#ffd23f', skin: '#c99a72', feat: 'bald' },
     }[key] || { hair: '#1a1a22', streak: null, frame: '#ff5da2', skin: '#d9a986', feat: 'bob' };
     cx.clearRect(0, 0, 90, 90);
-    cx.fillStyle = '#241a2e'; cx.fillRect(0, 0, 90, 90);
+    cx.fillStyle = '#241a2e';
+    cx.fillRect(0, 0, 90, 90);
     // Shoulders / jacket.
     cx.fillStyle = key === 'kai' ? '#ff6a1a' : key === 'lupe' ? '#ff5da2' : '#3a4a5a';
     cx.fillRect(0, 68, 90, 22);
     // Face.
     cx.fillStyle = conf.skin;
-    cx.beginPath(); cx.arc(45, 42, 22, 0, Math.PI * 2); cx.fill();
+    cx.beginPath();
+    cx.arc(45, 42, 22, 0, Math.PI * 2);
+    cx.fill();
     // Hair / feature.
     cx.fillStyle = conf.hair;
     if (conf.feat === 'cap') {
-      cx.beginPath(); cx.arc(45, 34, 22, Math.PI, 0); cx.fill();
+      cx.beginPath();
+      cx.arc(45, 34, 22, Math.PI, 0);
+      cx.fill();
       cx.fillRect(22, 30, 46, 6);
       cx.fillRect(45, 22, 30, 5); // brim
     } else if (conf.feat === 'long') {
-      cx.beginPath(); cx.arc(45, 34, 23, Math.PI, 0); cx.fill();
-      cx.fillRect(20, 34, 8, 34); cx.fillRect(62, 34, 8, 34);
+      cx.beginPath();
+      cx.arc(45, 34, 23, Math.PI, 0);
+      cx.fill();
+      cx.fillRect(20, 34, 8, 34);
+      cx.fillRect(62, 34, 8, 34);
     } else if (conf.feat === 'bob') {
-      cx.beginPath(); cx.arc(45, 36, 23, Math.PI, 0); cx.fill();
-      cx.fillRect(21, 36, 10, 26); cx.fillRect(59, 36, 10, 26);
+      cx.beginPath();
+      cx.arc(45, 36, 23, Math.PI, 0);
+      cx.fill();
+      cx.fillRect(21, 36, 10, 26);
+      cx.fillRect(59, 36, 10, 26);
     } else if (conf.feat === 'bald') {
-      cx.beginPath(); cx.arc(45, 36, 20, Math.PI, 0); cx.fill();
+      cx.beginPath();
+      cx.arc(45, 36, 20, Math.PI, 0);
+      cx.fill();
     } else { // streak / default
-      cx.beginPath(); cx.arc(45, 34, 23, Math.PI, 0); cx.fill();
+      cx.beginPath();
+      cx.arc(45, 34, 23, Math.PI, 0);
+      cx.fill();
       if (conf.streak) {
         cx.fillStyle = conf.streak;
         cx.fillRect(56, 16, 7, 26);
@@ -306,8 +322,12 @@ export class HUD {
     }
     // Eyes.
     cx.fillStyle = '#1a1a1a';
-    cx.beginPath(); cx.arc(37, 42, 2.5, 0, Math.PI * 2); cx.fill();
-    cx.beginPath(); cx.arc(53, 42, 2.5, 0, Math.PI * 2); cx.fill();
+    cx.beginPath();
+    cx.arc(37, 42, 2.5, 0, Math.PI * 2);
+    cx.fill();
+    cx.beginPath();
+    cx.arc(53, 42, 2.5, 0, Math.PI * 2);
+    cx.fill();
     this.portraitEl.style.borderColor = conf.frame;
   }
 
@@ -397,301 +417,293 @@ export class HUD {
 
   setPrompt(text) {
     if (!this.promptEl) return;
-    if (text) { this.promptEl.textContent = text; this.promptEl.classList.add('show'); }
-    else this.promptEl.classList.remove('show');
+    if (text) {
+      this.promptEl.textContent = text;
+      this.promptEl.classList.add('show');
+    } else {
+      this.promptEl.classList.remove('show');
+    }
   }
 
   showTitle(show) { if (this.titleEl) this.titleEl.classList.toggle('hidden', !show); }
   showIntro(show) { if (this.introEl) this.introEl.classList.toggle('hidden', !show); }
   showMap(show) { if (this.mapEl) this.mapEl.classList.toggle('hidden', !show); }
 
-  update(s) {
-    // s is the live state bag from main.hudState(): money, hours, stars,
-    // rank, rp, mission, district, radio, car, weapons, evading, wanted,
-    // position, heading, police, target, health, armour.
-    if (this.moneyEl) this.moneyEl.textContent = '$' + Math.floor(s.money).toLocaleString('en-US');
-    if (this.clockEl) {
-      const h = Math.floor(s.hours), m = Math.floor((s.hours - h) * 60);
-      this.clockEl.textContent = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+  // Per-frame refresh (10 Hz from main). Most per-frame calls are keyed
+  // no-ops when nothing changed; the map renders only while open.
+  update(state, dt) {
+    if (!state) return;
+    this.dialogueTimer -= dt;
+    if (this.dialogueTimer <= 0 && this.dialogueEl) this.dialogueEl.classList.remove('show');
+    this.toastTimer -= dt;
+    if (this.toastTimer <= 0 && this.toastEl) this.toastEl.classList.remove('show');
+    this.actTimer -= dt;
+    if (this.actTimer <= 0 && this.actCardEl) this.actCardEl.classList.remove('show');
+    // Mission panel: chapter · title, stage x/y, progress bar, objective,
+    // and the next chapter's name.
+    const m = state.mission;
+    if (this.missionEl) this.missionEl.classList.toggle('hidden', !m);
+    if (m) {
+      if (this.missionTitleEl) this.missionTitleEl.textContent = `${m.chapter} · ${m.title}`;
+      if (this.missionStageEl) this.missionStageEl.textContent = `STAGE ${m.stage}/${m.stages}`;
+      const barKey = `${m.stage}/${m.stages}`;
+      if (barKey !== this.lastStageBarKey) {
+        this.lastStageBarKey = barKey;
+        if (this.missionBarEl) this.missionBarEl.innerHTML = Array.from({ length: m.stages }, (_, i) => `<span class="seg${i < m.stage ? ' filled' : ''}"></span>`).join('');
+      }
+      if (this.missionObjEl) this.missionObjEl.textContent = m.objective;
+      if (this.missionNextEl) this.missionNextEl.textContent = m.next ? `NEXT: ${m.next}` : '';
     }
+    // Top-right: money (locale commas), clock, stars + wanted badge.
+    if (this.moneyEl) this.moneyEl.textContent = '$' + (state.money || 0).toLocaleString('en-US');
+    if (this.clockEl) this.clockEl.textContent = state.clock || '';
     if (this.starsEl) {
-      // Per-star spans: filled stars saturated gold #FFC83D, empty ones
-      // dark-grey outlines — so 3 gold + 2 grey reads at a glance.
-      const key = String(s.stars);
+      const stars = Math.max(0, Math.min(5, state.stars || 0));
+      const key = `${stars}`;
       if (key !== this.lastStarsKey) {
         this.lastStarsKey = key;
-        let html = '';
-        for (let i = 0; i < 5; i++) {
-          html += i < s.stars
-            ? '<span class="star-lit">★</span>'
-            : '<span class="star-dim">☆</span>';
-        }
-        this.starsEl.innerHTML = html;
+        this.starsEl.innerHTML = Array.from({ length: 5 }, (_, i) => i < stars ? '<span class="star-lit">★</span>' : '<span class="star-dim">☆</span>').join('');
       }
     }
-    // Wanted badge: IN SIGHT (red) while a unit sees Kai, HIDDEN (blue)
-    // while the search grid runs and the EVADING meter climbs.
-    if (this.wantedBadgeEl) {
-      const bkey = s.stars > 0 ? (s.hidden ? 'HIDDEN' : 'IN SIGHT') : '';
-      if (bkey !== this.lastBadgeKey) {
-        this.lastBadgeKey = bkey;
-        if (!bkey) this.wantedBadgeEl.classList.remove('show');
-        else {
-          this.wantedBadgeEl.textContent = bkey;
-          this.wantedBadgeEl.className = 'show ' + (bkey === 'HIDDEN' ? 'hidden-badge' : 'insight');
+    const badge = state.wantedLabel || '';
+    if (badge !== this.lastBadgeKey) {
+      this.lastBadgeKey = badge;
+      if (this.wantedBadgeEl) {
+        if (badge) {
+          this.wantedBadgeEl.textContent = badge;
+          this.wantedBadgeEl.className = 'show ' + (badge === 'IN SIGHT' ? 'insight' : badge === 'HIDDEN' ? 'hidden-badge' : '');
+        } else {
+          this.wantedBadgeEl.textContent = '';
+          this.wantedBadgeEl.className = '';
         }
       }
     }
-    if (this.rankNameEl) this.rankNameEl.textContent = s.rank || '';
-    if (this.rpFillEl) this.rpFillEl.style.width = (s.rpNext ? Math.min(100, (s.rp / s.rpNext) * 100) : 100) + '%';
-    if (this.rpTextEl) this.rpTextEl.textContent = s.rpNext
-      ? `${Math.floor(s.rp).toLocaleString('en-US')}/${s.rpNext.toLocaleString('en-US')} RP`
-      : `${Math.floor(s.rp).toLocaleString('en-US')} RP · MAX`;
-    if (this.missionTitleEl) this.missionTitleEl.textContent = `CH.${s.missionIndex + 1} · ${s.missionTitle}`;
-    if (this.missionStageEl) this.missionStageEl.textContent = s.missionStage || '';
-    // Stage bar: one segment per stage, filled gold-orange up to the
-    // current stage — the 4-segment bar the top-3 panels all show.
-    if (this.missionBarEl) {
-      const bkey = `${s.stageIndex || 0}/${s.stageTotal || 0}`;
-      if (bkey !== this.lastStageBarKey) {
-        this.lastStageBarKey = bkey;
-        const segs = this.missionBarEl.querySelectorAll('.seg');
-        segs.forEach((el, i) => el.classList.toggle('filled', i < (s.stageIndex || 0)));
-      }
-    }
-    if (this.missionObjEl) this.missionObjEl.textContent = s.objective;
-    if (this.missionNextEl) this.missionNextEl.textContent = s.nextObjective ? 'NEXT: ' + s.nextObjective : '';
-    if (this.timerEl) {
-      if (s.timer > 0) { this.timerEl.textContent = s.timer + 's'; this.timerEl.classList.add('show'); }
-      else this.timerEl.classList.remove('show');
-    }
+    // Rank + respect: name, RP bar, numeric RP text.
+    if (this.rankNameEl) this.rankNameEl.textContent = state.rankName || '';
+    if (this.rpFillEl) this.rpFillEl.style.width = (state.rpPct || 0) + '%';
+    if (this.rpTextEl) this.rpTextEl.textContent = state.rpText || '';
+    // PCPD panel + evading line.
+    this.setPcpd(state.pcpdUnits, state.airDeployed, state.code);
     if (this.evadeEl) {
-      if (s.wanted) { this.evadeEl.textContent = 'EVADING ' + Math.floor(s.evading) + '%'; this.evadeEl.classList.add('show'); }
-      else this.evadeEl.classList.remove('show');
+      if (state.evadeText) {
+        this.evadeEl.textContent = state.evadeText;
+        this.evadeEl.classList.add('show');
+      } else {
+        this.evadeEl.classList.remove('show');
+      }
     }
-    if (this.healthFillEl) this.healthFillEl.style.width = Math.max(0, Math.min(100, s.health)) + '%';
-    if (this.healthTextEl) this.healthTextEl.textContent = 'HEALTH ' + Math.round(s.health);
-    if (this.armourFillEl) this.armourFillEl.style.width = Math.max(0, Math.min(100, s.armour)) + '%';
-    if (this.armourTextEl) this.armourTextEl.textContent = 'ARMOUR ' + Math.round(s.armour);
-    // District readout: name, standing pill (WARY / NEUTRAL / FRIENDLY +
-    // value, coloured by band), and the one-line blurb.
-    if (this.districtEl) this.districtEl.textContent = s.district;
-    if (this.districtStandEl && s.districtLabel) {
-      this.districtStandEl.textContent = `${s.districtLabel} · ${Math.round(s.districtStanding)}`;
-      this.districtStandEl.className = 'stand-' + s.districtLabel.toLowerCase();
+    // Weapons + crew bars (cached refreshes).
+    this.setWeapons(state.weapons);
+    if (state.crew) this.setCrew(state.crew);
+    // Health / armour bars.
+    if (this.healthFillEl) this.healthFillEl.style.width = (state.health || 0) + '%';
+    if (this.healthTextEl) this.healthTextEl.textContent = 'HEALTH ' + Math.round(state.health || 0);
+    if (this.armourFillEl) this.armourFillEl.style.width = (state.armour || 0) + '%';
+    if (this.armourTextEl) this.armourTextEl.textContent = 'ARMOUR ' + Math.round(state.armour || 0);
+    // District + respect readout under the minimap.
+    if (this.districtEl && state.district) {
+      this.districtEl.textContent = state.district.name;
+      const sv = state.district.standing;
+      this.districtStandEl.textContent = `${standingLabel(sv)} · ${sv}`;
+      this.districtStandEl.className = sv >= 70 ? 'stand-friendly' : sv >= 40 ? 'stand-neutral' : 'stand-wary';
+      this.districtDescEl.textContent = state.district.desc;
     }
-    if (this.districtDescEl) this.districtDescEl.textContent = s.districtDesc || '';
-    if (this.respectEl) this.respectEl.textContent = 'RESPECT ' + s.respect;
-    if (this.radioEl) this.radioEl.textContent = s.radio;
-    if (this.radioGenreEl) this.radioGenreEl.textContent = s.radioGenre ? ' — ' + s.radioGenre : '';
-    if (this.songEl) this.songEl.textContent = s.song;
-    if (this.speedEl) this.speedEl.textContent = s.inCar ? String(Math.round(s.carSpeed * 3.6)) : '0';
-    if (this.carNameEl) this.carNameEl.textContent = s.inCar ? s.carName : 'ON FOOT';
-    if (this.carCondEl) this.carCondEl.textContent = s.inCar ? `${Math.round(s.carCond)}% ${s.carCondLabel}` : '';
-    if (this.carCondFillEl) this.carCondFillEl.style.width = (s.inCar ? Math.max(0, Math.min(100, s.carCond)) : 0) + '%';
-    if (this.carCondBarEl) this.carCondBarEl.style.display = s.inCar ? '' : 'none';
-    if (this.gearEl) this.gearEl.textContent = s.inCar ? 'G' + s.carGear : '';
-    this.setWeapons(s.weapons);
-    this.setCrew(s.crew);
-    // Waypoint for the minimap route line (set on the full map, read here).
-    this.waypoint = s.waypoint || null;
-    this.drawMinimap(s);
-    if (this.dialogueTimer > 0) {
-      this.dialogueTimer -= 1 / 60;
-      if (this.dialogueTimer <= 0) this.dialogueEl.classList.remove('show');
+    if (this.respectEl) this.respectEl.textContent = 'RESPECT ' + (state.respect ?? 0);
+    // Radio: station + genre + track.
+    if (this.radioEl) this.radioEl.textContent = state.radio.freq;
+    if (this.radioGenreEl) this.radioGenreEl.textContent = ' — ' + state.radio.genre;
+    if (this.songEl) this.songEl.textContent = state.radio.song;
+    // Car HUD: name, condition, speed, gear.
+    if (state.car) {
+      this.carNameEl.textContent = state.car.name;
+      this.carCondEl.textContent = state.car.condText;
+      this.carCondBarEl.classList.remove('hidden');
+      this.carCondFillEl.style.width = state.car.cond + '%';
+      this.carCondFillEl.style.background = state.car.cond > 60 ? '#4caf50' : state.car.cond > 30 ? '#ffb300' : '#ff5a4e';
+      this.speedEl.textContent = state.car.speed;
+      this.gearEl.textContent = state.car.gear;
+    } else {
+      this.carNameEl.textContent = 'ON FOOT';
+      this.carCondEl.textContent = '';
+      this.carCondBarEl.classList.add('hidden');
+      this.speedEl.textContent = state.speed || '0';
+      this.gearEl.textContent = '';
     }
-    // Act card counts down from showActCard, then dismisses itself.
-    if (this.actTimer > 0) {
-      this.actTimer -= 1 / 60;
-      if (this.actTimer <= 0) this.hideActCard();
+    // Mission timer bar (timed missions only).
+    if (state.timerText) {
+      this.timerEl.textContent = state.timerText;
+      this.timerEl.classList.add('show');
+    } else if (this.timerEl) {
+      this.timerEl.classList.remove('show');
     }
-    if (this.toastTimer > 0) {
-      this.toastTimer -= 1 / 60;
-      if (this.toastTimer <= 0) this.toastEl.classList.remove('show');
-    }
+    // Minimap + full map (full map only while open).
+    this.drawMinimap(state);
+    if (this.mapEl && !this.mapEl.classList.contains('hidden')) this.renderMap(state);
   }
 
-  drawMinimap(s) {
+  // Circular minimap: blue ocean, cream sand strip, dark grey city,
+  // gold beach road, dark blocks, green waypoint, red/grey/black blips,
+  // yellow target ring, Kai's wedge at the centre, direction "N".
+  drawMinimap(state) {
     const ctx = this.minimapCtx;
-    if (!ctx) return;
-    const W = 150, H = 150, R = 75;
-    ctx.clearRect(0, 0, W, H);
+    if (!ctx || !this.minimapEl) return;
+    const S = this.minimapEl.width || 150;
+    const R = 120;
+    ctx.clearRect(0, 0, S, S);
     ctx.save();
-    ctx.beginPath(); ctx.arc(R, R, R - 2, 0, Math.PI * 2); ctx.clip();
-    ctx.fillStyle = 'rgba(10,16,28,0.85)'; ctx.fillRect(0, 0, W, H);
-    // World -210..210 maps onto the 150px circle.
-    const sc = W / 420;
-    const px = (x) => (x + 210) * sc, py = (z) => (z + 210) * sc;
-    // Roads.
-    ctx.strokeStyle = 'rgba(200,200,220,0.5)'; ctx.lineWidth = 2;
-    for (let v = -160; v <= 160; v += 40) {
-      ctx.beginPath(); ctx.moveTo(px(v), py(-200)); ctx.lineTo(px(v), py(200)); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(px(-200), py(v)); ctx.lineTo(px(200), py(v)); ctx.stroke();
-    }
-    // Ocean on the west edge (shoreline x=-190).
-    ctx.fillStyle = 'rgba(40,110,170,0.8)'; ctx.fillRect(0, 0, px(-190), H);
-    // Waypoint route: dashed gold line from the player, white dot at the end.
-    if (this.waypoint) {
-      ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 2; ctx.setLineDash([4, 4]);
-      ctx.beginPath(); ctx.moveTo(px(s.px), py(s.pz)); ctx.lineTo(px(this.waypoint.x), py(this.waypoint.y)); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.arc(px(this.waypoint.x), py(this.waypoint.y), 3.5, 0, Math.PI * 2); ctx.fill();
-    }
-    // District names at their centres.
-    ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = 'bold 7px sans-serif'; ctx.textAlign = 'center';
-    for (const d of DISTRICTS) {
-      const cx = (d.x0 + d.x1) / 2, cz = (d.z0 + d.z1) / 2;
-      ctx.fillText(d.name, px(cx), py(cz));
-    }
-    // Landmark + side-job chips: a coloured square with a letter.
-    ctx.font = 'bold 8px sans-serif';
-    for (const lm of [...LANDMARKS, ...SIDE_JOBS]) {
-      const lx = px(lm.x), ly = py(lm.z);
-      ctx.fillStyle = lm.color;
-      ctx.fillRect(lx - 3, ly - 3, 6, 6);
-      ctx.fillStyle = '#0c1420';
-      ctx.fillText(lm.icon, lx, ly + 3);
-    }
-    // Search grid while wanted: a blue circle around the player with a
-    // red edge — the PCPD cordon closing in (or the HIDDEN variant's
-    // search area while the EVADING meter climbs).
-    if (s.wanted) {
-      ctx.fillStyle = 'rgba(59,130,246,0.18)';
-      ctx.beginPath(); ctx.arc(px(s.px), py(s.pz), 34, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#ff4444'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(px(s.px), py(s.pz), 34, 0, Math.PI * 2); ctx.stroke();
-    }
-    // Target beacon.
-    if (s.target) {
-      ctx.fillStyle = '#ffd23f';
-      ctx.beginPath(); ctx.arc(px(s.target.x), py(s.target.z), 5, 0, Math.PI * 2); ctx.fill();
-    }
-    // Police dots. Kiki's LOOKOUT reveals every patrol (officers + heli);
-    // otherwise only the cruisers show.
-    const dots = s.reveal && s.policeAll ? s.policeAll : (s.police || []);
-    ctx.fillStyle = '#ff4444';
-    for (const u of dots) {
-      if (u.x !== undefined) { ctx.beginPath(); ctx.arc(px(u.x), py(u.z), 3.5, 0, Math.PI * 2); ctx.fill(); }
-    }
-    // Player arrow (rotates with heading).
+    ctx.scale(S / R, S / R); // layout is authored at 120 units, canvas is 150
     ctx.save();
-    ctx.translate(px(s.px), py(s.pz));
-    ctx.rotate(-s.heading);
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath(); ctx.moveTo(0, -7); ctx.lineTo(5, 6); ctx.lineTo(-5, 6); ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.arc(R / 2, R / 2, 58, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = '#2f7fb5';
+    ctx.fillRect(0, 0, R, R);
+    ctx.fillStyle = '#e8d5a0';
+    ctx.fillRect(0, 0, 15, R);
+    ctx.fillStyle = '#3a3a42';
+    ctx.fillRect(15, 0, 105, R);
+    ctx.fillStyle = '#f2c230';
+    ctx.fillRect(24, 0, 3, R);
+    ctx.fillStyle = '#2a2a30';
+    for (let gx = 0; gx < 7; gx++) for (let gz = 0; gz < 7; gz++) ctx.fillRect(31 + gx * 12, 8 + gz * 12, 9, 9);
+    const px = state.player.x ?? 0;
+    const pz = state.player.z ?? 0;
+    const scale = R / 460;
+    const toM = (x, z) => [60 + (x + 230) * scale, 60 + (z + 230) * scale];
+    // Waypoint (green X) and target ring (yellow circle).
+    if (state.waypoint) {
+      const [wx, wy] = toM(state.waypoint.x, state.waypoint.z);
+      ctx.strokeStyle = '#7dff5e';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(wx - 4, wy - 4); ctx.lineTo(wx + 4, wy + 4);
+      ctx.moveTo(wx + 4, wy - 4); ctx.lineTo(wx - 4, wy + 4);
+      ctx.stroke();
+    }
+    if (state.target) {
+      const [tx, ty] = toM(state.target.x, state.target.z);
+      ctx.strokeStyle = '#ffd23f';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(tx, ty, 6, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (state.blips) for (const b of state.blips) {
+      const [bx, by] = toM(b.x, b.z);
+      ctx.fillStyle = b.col || '#fff';
+      ctx.beginPath();
+      ctx.arc(bx, by, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Kai's wedge (orange triangle, pointing where he faces).
+    const [cx, cy] = toM(px, pz);
+    const yaw = state.player.yaw ?? 0;
+    ctx.fillStyle = '#ff6a1a';
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.sin(yaw) * 7, cy - Math.cos(yaw) * 7);
+    ctx.lineTo(cx + Math.sin(yaw + 2.5) * 6, cy - Math.cos(yaw + 2.5) * 6);
+    ctx.lineTo(cx + Math.sin(yaw - 2.5) * 6, cy - Math.cos(yaw - 2.5) * 6);
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
-    // North tick.
-    ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('N', R, 13);
-    ctx.restore();
-    ctx.strokeStyle = 'rgba(255,255,255,0.65)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(R, R, R - 1, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = '#1a1a22';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(R / 2, R / 2, 58, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('N', R / 2, 12);
+    ctx.restore(); // undo the 150/120 scale
   }
 
-  // Full map (M): district fills + names + standing, roads, pier,
-  // landmark chips with labels, gold route to the target, white route to
-  // the waypoint, and a footer with the objective + distances.
-  renderMap(s) {
-    if (!this.mapEl || this.mapEl.classList.contains('hidden')) return;
-    if (this.mapMissionsEl) {
-      this.mapMissionsEl.innerHTML = MISSIONS.map((m, i) =>
-        `<div class="map-job${i === s.missionIndex ? ' current' : ''}${i < s.missionIndex ? ' done' : ''}">${i + 1}. ${m.title} — ${m.contact}</div>`
-      ).join('');
-    }
-    if (this.mapStatsEl) {
-      this.mapStatsEl.textContent = `Money $${Math.floor(s.money)} · ${s.rank || ''} · ${Math.floor(s.rp)} RP · Respect ${s.respect} · Wanted ${'★'.repeat(s.stars)}${'☆'.repeat(5 - s.stars)} · ${s.district}`;
-    }
-    // Footer: current objective + distance, plus waypoint distance.
-    if (this.mapFooterEl) {
-      const parts = [];
-      if (s.target) {
-        const d = dist2d(s.px, s.pz, s.target.x, s.target.z);
-        parts.push(`${s.objective || 'Objective'} · ${(d / 1000).toFixed(2)} km`);
-      }
-      const wp = this.mapView.waypoint;
-      if (wp) {
-        const dw = dist2d(s.px, s.pz, wp.x, wp.y);
-        parts.push(`WAYPOINT · ${(dw / 1000).toFixed(2)} km`);
-      }
-      this.mapFooterEl.textContent = parts.join('   ·   ') || (s.objective || '');
-    }
+  // Full map: dark city grid with ocean, beach road, district names,
+  // landmarks, jobs, waypoint, mission blips and a zoom/pan hint.
+  renderMap(state) {
     const ctx = this.mapCtx;
-    if (!ctx) return;
+    if (!ctx || !this.mapCanvasEl) return;
     const W = 520, H = 380;
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = '#0c1420'; ctx.fillRect(0, 0, W, H);
-    const px = (x) => this.mapToCanvas(x, 0).x;
-    const py = (z) => this.mapToCanvas(0, z).y;
+    ctx.fillStyle = '#0f141c';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#1a3a5a';
     const sc = this.mapScale();
-    // Ocean (west) + sand strip (shoreline x=-190, road edge x=-160).
-    ctx.fillStyle = '#1e5f8a';
-    ctx.fillRect(0, 0, px(-190), H);
-    ctx.fillStyle = '#d9b98a';
-    ctx.fillRect(px(-190), 0, px(-160) - px(-190), H);
-    // District fills: translucent colour + name + standing.
+    const left = 260 + (-230 - this.mapView.cx) * sc;
+    ctx.fillRect(left, 0, 230 * sc, H);
+    ctx.fillStyle = '#e8d5a0';
+    ctx.fillRect(260 + (-200 - this.mapView.cx) * sc, 0, 17 * sc, H);
+    const beach = this.mapToCanvas(-160, 0);
+    ctx.fillStyle = '#f2c230';
+    ctx.fillRect(beach.x - 1, 0, 2, H);
+    ctx.fillStyle = '#2a2a30';
+    for (let gx = 0; gx < 7; gx++) for (let gz = 0; gz < 7; gz++) {
+      const p = this.mapToCanvas(-160 + gx * 40 + 20, -160 + gz * 40 + 20);
+      ctx.fillRect(p.x - 4 * sc, p.y - 4 * sc, 8 * sc, 8 * sc);
+    }
+    // District labels.
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 11px sans-serif';
     ctx.textAlign = 'center';
     for (const d of DISTRICTS) {
-      const hex = '#' + d.color.toString(16).padStart(6, '0');
-      const x0 = px(d.x0), y0 = py(d.z0), x1 = px(d.x1), y1 = py(d.z1);
-      ctx.fillStyle = hex; ctx.globalAlpha = 0.16;
-      ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
-      ctx.globalAlpha = 0.55; ctx.strokeStyle = hex; ctx.lineWidth = 1;
-      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
-      ctx.globalAlpha = 1;
-      const val = s.standing ? (s.standing[d.name] ?? 55) : 55;
-      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-      ctx.fillStyle = '#ffffff'; ctx.font = 'bold 12px sans-serif';
-      ctx.fillText(d.name, cx, cy - 2);
-      ctx.fillStyle = '#ffd9a0'; ctx.font = '11px sans-serif';
-      ctx.fillText(`${standingLabel(val)} · ${val}`, cx, cy + 13);
+      const p = this.mapToCanvas(d.x, d.z);
+      ctx.fillText(d.name, p.x, p.y);
     }
-    // Roads.
-    ctx.strokeStyle = '#3a3f4a'; ctx.lineWidth = Math.max(2, 5 * (sc / 0.9));
-    for (let v = -160; v <= 160; v += 40) {
-      ctx.beginPath(); ctx.moveTo(px(v), 0); ctx.lineTo(px(v), H); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, py(v)); ctx.lineTo(W, py(v)); ctx.stroke();
-    }
-    // Pier deck.
-    ctx.strokeStyle = '#8a6a4a'; ctx.lineWidth = 8;
-    ctx.beginPath(); ctx.moveTo(px(-262), py(20)); ctx.lineTo(px(-178), py(20)); ctx.stroke();
-    // Landmarks + side jobs: icon chip + label.
-    ctx.font = 'bold 11px sans-serif';
-    for (const lm of [...LANDMARKS, ...SIDE_JOBS]) {
+    // Landmarks (green), jobs (yellow), waypoint (green X), mission blips (yellow ring).
+    for (const lm of LANDMARKS) {
       const p = this.mapToCanvas(lm.x, lm.z);
-      ctx.fillStyle = lm.color;
-      ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#0c1420'; ctx.textAlign = 'center';
-      ctx.fillText(lm.icon, p.x, p.y + 4);
-      ctx.fillStyle = '#e8ecf4'; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
-      ctx.fillText(lm.label, p.x + 11, p.y + 4);
-      ctx.font = 'bold 11px sans-serif';
+      ctx.fillStyle = '#7dff5e';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = '10px sans-serif';
+      ctx.fillText(lm.label, p.x, p.y - 8);
     }
-    // Route lines: gold dashed player -> target, white dashed player -> waypoint.
-    ctx.setLineDash([8, 6]);
-    if (s.target) {
-      ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(px(s.px), py(s.pz)); ctx.lineTo(px(s.target.x), py(s.target.z)); ctx.stroke();
-    }
-    const wp = this.mapView.waypoint;
-    if (wp) {
-      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(px(s.px), py(s.pz)); ctx.lineTo(px(wp.x), py(wp.y)); ctx.stroke();
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.arc(px(wp.x), py(wp.y), 6, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#0c1420'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
-      ctx.fillText('W', px(wp.x), py(wp.y) + 3);
-    }
-    ctx.setLineDash([]);
-    // Target beacon + player dot.
-    if (s.target) {
+    for (const j of SIDE_JOBS) {
+      const p = this.mapToCanvas(j.x, j.z);
       ctx.fillStyle = '#ffd23f';
-      ctx.beginPath(); ctx.arc(px(s.target.x), py(s.target.z), 7, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = '10px sans-serif';
+      ctx.fillText(j.label, p.x, p.y - 8);
     }
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath(); ctx.arc(px(s.px), py(s.pz), 6, 0, Math.PI * 2); ctx.fill();
-    // Zoom / pan hint.
-    ctx.fillStyle = '#8fa0b8'; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText('Wheel — zoom · Drag — pan · Click — waypoint · Right-click — clear', 8, H - 8);
+    if (state.waypoint) {
+      const p = this.mapToCanvas(state.waypoint.x, state.waypoint.z);
+      ctx.strokeStyle = '#7dff5e';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(p.x - 6, p.y - 6); ctx.lineTo(p.x + 6, p.y + 6);
+      ctx.moveTo(p.x + 6, p.y - 6); ctx.lineTo(p.x - 6, p.y + 6);
+      ctx.stroke();
+    }
+    if (state.target) {
+      const p = this.mapToCanvas(state.target.x, state.target.z);
+      ctx.strokeStyle = '#ffd23f';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // Kai's wedge.
+    const cp = this.mapToCanvas(state.player.x, state.player.z);
+    ctx.fillStyle = '#ff6a1a';
+    ctx.beginPath();
+    ctx.moveTo(cp.x + Math.sin(state.player.yaw) * 8, cp.y - Math.cos(state.player.yaw) * 8);
+    ctx.lineTo(cp.x + Math.sin(state.player.yaw + 2.5) * 6, cp.y - Math.cos(state.player.yaw + 2.5) * 6);
+    ctx.lineTo(cp.x + Math.sin(state.player.yaw - 2.5) * 6, cp.y - Math.cos(state.player.yaw - 2.5) * 6);
+    ctx.closePath();
+    ctx.fill();
+    if (this.mapMissionsEl) {
+      this.mapMissionsEl.innerHTML = MISSIONS.map((m, i) => `<div class="map-job${i === state.missionIdx ? ' current' : ''}">CH.${i + 1} · ${m.title} — $${m.reward}</div>`).join('');
+    }
+    if (this.mapStatsEl) {
+      this.mapStatsEl.textContent = `DISTRICTS HELD ${state.districtsHeld || 0}/7 · RESPECT ${state.respect || 0} · CASH $${(state.money || 0).toLocaleString('en-US')}`;
+    }
+    if (this.mapFooterEl) {
+      this.mapFooterEl.textContent = 'Click to set waypoint · Drag to pan · Scroll to zoom · Right-click clears · M / ESC closes';
+    }
   }
 }

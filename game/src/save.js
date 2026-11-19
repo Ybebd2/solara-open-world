@@ -1,32 +1,48 @@
-// SOLARA — save: localStorage save/load. Built fresh for the
-// @witty-meteor-32 build.
+// SOLARA — save/load: one localStorage slot for the run state.
+// Re-authored for the @witty-meteor-32 recording-M build.
 
-const KEY = 'solara-save-v3';
+const SLOT = 'solara-save-v3';
 
-export function saveGame(state) {
+// Snapshot the fields a continue needs: cash, standing, progress,
+// clock and where Kai stood when the player saved.
+export function saveGame(g) {
+  const snap = {
+    money: g.money,
+    respect: g.respect,
+    rp: g.rp || 0,
+    missionIndex: g.missionIndex,
+    hours: g.hours,
+    px: g.px,
+    pz: g.pz,
+    savedAt: Date.now(),
+  };
   try {
-    const data = {
-      money: state.money,
-      respect: state.respect,
-      rp: state.rp || 0,
-      missionIndex: state.missionIndex,
-      hours: state.hours,
-      px: state.px,
-      pz: state.pz,
-      savedAt: Date.now(),
-    };
-    localStorage.setItem(KEY, JSON.stringify(data));
+    localStorage.setItem(SLOT, JSON.stringify(snap));
     return true;
-  } catch (e) { return false; }
+  } catch (e) {
+    return false;
+  }
 }
 
 export function loadGame() {
+  let raw = null;
   try {
-    const raw = localStorage.getItem(KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch (e) { return null; }
+    raw = localStorage.getItem(SLOT);
+  } catch (e) {
+    return null;
+  }
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
 }
 
 export function clearSave() {
-  try { localStorage.removeItem(KEY); } catch (e) {}
+  try {
+    localStorage.removeItem(SLOT);
+  } catch (e) {
+    /* storage unavailable — nothing to clear */
+  }
 }

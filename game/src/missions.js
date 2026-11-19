@@ -1,6 +1,6 @@
 // SOLARA — missions: the 8-job chain (Lupe, Sully, Marco, Brandt,
-// Aurora). Beacon column + ground ring mark the target; mission 4 has
-// a 90s timer. Built fresh for the @witty-meteor-32 build.
+// Aurora). A beacon column + ground ring mark the target; mission 4 has
+// a 90 s timer. Re-authored for the @witty-meteor-32 recording-M build.
 import * as THREE from '../vendor/three.module.min.js';
 import { MISSIONS, actFor, dist2d } from './config.js';
 
@@ -9,9 +9,9 @@ export class Missions {
     this.scene = scene;
     this.hud = hud;
     this.onAct = onAct || null; // fires when the act changes (title card)
-    this.lastAct = null;        // act label of the last card shown
+    this.lastAct = null; // act label of the last card shown
     this.index = 0;
-    this.timer = 0;        // seconds left on a timed mission (0 = none)
+    this.timer = 0; // seconds left on a timed mission (0 = none)
     this.done = false;
     this.current = MISSIONS[0];
     // Beacon: glowing column + pulsing ring at the target.
@@ -91,13 +91,15 @@ export class Missions {
     return this.current ? this.current.objective : 'All jobs done — Solara is yours.';
   }
 
-  // Stage display for the mission panel: the LAST band whose max distance
-  // still covers the player. Purely derived from position — it never gates
-  // completion, so teleporting to the target jumps to the final stage and
-  // the job completes exactly as before. NEXT is the next stage's text, or
-  // the next job's title on the last stage.
+  // Stage display for the mission panel: the LAST band whose max
+  // distance still covers the player. Purely derived from position —
+  // it never gates completion, so teleporting to the target jumps to
+  // the final stage and the job completes exactly as before. NEXT is
+  // the next stage's text, or the next job's title on the last stage.
   stageInfo(px, pz) {
-    if (!this.current) return { index: 1, total: 1, text: 'All jobs done — Solara is yours.', next: '' };
+    if (!this.current) {
+      return { index: 1, total: 1, text: 'All jobs done — Solara is yours.', next: '' };
+    }
     const stages = this.current.stages || [{ max: 999, text: this.current.objective }];
     const d = dist2d(px, pz, this.current.target.x, this.current.target.z);
     let idx = 0;

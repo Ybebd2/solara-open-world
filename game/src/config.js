@@ -3,6 +3,19 @@
 // districts, the eight-job chain, crew, cars, weapons, radio, ranks.
 // Numbers are the game's contract — the shots and the GTA-core checks
 // stage against them — so they match the design doc exactly.
+// Re-authored for the recording-M build.
+
+export function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+export function lerp(a, b, t) { return a + (b - a) * t; }
+export function dist2d(ax, az, bx, bz) { const dx = ax - bx, dz = az - bz; return Math.sqrt(dx * dx + dz * dz); }
+export function rand(a, b) { return a + Math.random() * (b - a); }
+export function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+// Short-way hue interpolation: goes through red (0/360), never green.
+export function hueLerp(h1, h2, t) {
+  const d = ((h2 - h1 + 540) % 360) - 180;
+  return (((h1 + d * t) % 360) + 360) % 360;
+}
 
 export const WORLD = {
   half: 200,
@@ -196,15 +209,3 @@ export function condLabel(cond) {
   if (cond >= 25) return 'SMOKING';
   return 'WRECKED';
 }
-
-// Short-way hue interpolation: goes through red (0/360), never green.
-export function hueLerp(h1, h2, t) {
-  let d = ((h2 - h1 + 540) % 360) - 180;
-  return (((h1 + d * t) % 360) + 360) % 360;
-}
-
-export function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
-export function lerp(a, b, t) { return a + (b - a) * t; }
-export function dist2d(ax, az, bx, bz) { const dx = ax - bx, dz = az - bz; return Math.sqrt(dx * dx + dz * dz); }
-export function rand(a, b) { return a + Math.random() * (b - a); }
-export function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }

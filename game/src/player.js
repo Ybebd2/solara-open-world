@@ -3,9 +3,16 @@
 // the camera's facing direction flattened to horizontal; ray.camera is
 // always set (Sprite raycasting needs it). While driving, shots
 // originate from the car, never from the stale on-foot position.
-// Built fresh for the @witty-meteor-32 build.
+// Re-authored for the @witty-meteor-32 recording-M build.
 import * as THREE from '../vendor/three.module.min.js';
 import { WORLD, clamp, dist2d } from './config.js';
+
+// Kai's colours: vivid orange jacket (no pedestrian wears it, so the
+// protagonist reads at a glance), skin forearms, dark trousers, red cap.
+const JACKET = 0xff6a1a;
+const SKIN = 0xd9a986;
+const PANTS = 0x2a2a30;
+const CAP = 0xc22e2e;
 
 export class Player {
   constructor(scene, camera) {
@@ -18,20 +25,42 @@ export class Player {
     this.health = 100;
     this.armour = 50; // vest: absorbs damage before health does
     this.group = new THREE.Group();
-    // Body: vivid orange jacket (Kai's colour — no pedestrian wears it,
-    // so the protagonist reads at a glance), head, red cap, arms, legs.
-    const jacket = new THREE.MeshStandardMaterial({ color: 0xff6a1a, roughness: 0.8 });
-    const skin = new THREE.MeshStandardMaterial({ color: 0xd9a986, roughness: 0.7 });
-    const pants = new THREE.MeshStandardMaterial({ color: 0x2a2a30, roughness: 0.9 });
-    const capMat = new THREE.MeshStandardMaterial({ color: 0xc22e2e, roughness: 0.7 });
+    this.buildBody();
+    this.buildPistol();
+    for (const lx of [-0.16, 0.16]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.75, 0.28), this.pantsMat);
+      leg.position.set(lx, 0.38, 0);
+      this.group.add(leg);
+    }
+    this.group.position.set(-200, 0, WORLD.pier.z);
+    scene.add(this.group);
+    this.raycaster = new THREE.Raycaster();
+    // Weapon state: 1 FISTS (∞), 2 VESPER pistol (12 mag), 3–5 locked.
+    this.weapon = 1;
+    this.weaponAmmo = 12; // VESPER mag — shooting spends it (12→11)
+    this.weaponLocked = [false, false, true, true, true];
+    this.aiming = false;
+  }
+
+  buildBody() {
+    const jacket = new THREE.MeshStandardMaterial({ color: JACKET, roughness: 0.8 });
+    const skin = new THREE.MeshStandardMaterial({ color: SKIN, roughness: 0.7 });
+    this.pantsMat = new THREE.MeshStandardMaterial({ color: PANTS, roughness: 0.9 });
+    const capMat = new THREE.MeshStandardMaterial({ color: CAP, roughness: 0.7 });
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.85, 0.36), jacket);
-    torso.position.y = 1.05; torso.castShadow = true; this.group.add(torso);
+    torso.position.y = 1.05;
+    torso.castShadow = true;
+    this.group.add(torso);
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 10), skin);
-    head.position.y = 1.72; head.castShadow = true; this.group.add(head);
+    head.position.y = 1.72;
+    head.castShadow = true;
+    this.group.add(head);
     const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.12, 12), capMat);
-    cap.position.y = 1.92; this.group.add(cap);
+    cap.position.y = 1.92;
+    this.group.add(cap);
     const brim = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.05, 0.3), capMat);
-    brim.position.set(0, 1.88, -0.28); this.group.add(brim);
+    brim.position.set(0, 1.88, -0.28);
+    this.group.add(brim);
     // Arms are stored (with their rest pose) so the aim pose can swing
     // them forward into a two-hand pistol grip — and back again. Bare
     // forearms (skin, not jacket): in the aim pose the extended arms
@@ -40,7 +69,8 @@ export class Player {
     // arms are thick (0.2 m) and splayed wide so the forearms angle
     // down-forward to the grip and stay visible BELOW the silver
     // slide instead of being swallowed by it.
-    this.armL = null; this.armR = null;
+    this.armL = null;
+    this.armR = null;
     this.armRest = {};
     for (const ax of [-1, 1]) {
       const arm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), skin);
@@ -49,6 +79,9 @@ export class Player {
       if (ax < 0) this.armL = arm; else this.armR = arm;
       this.armRest[ax < 0 ? 'L' : 'R'] = { x: arm.position.x, y: arm.position.y, z: arm.position.z, rx: 0, rz: 0 };
     }
+  }
+
+  buildPistol() {
     // Pistol, hidden until the aim pose: bright silver slide + grip,
     // held out in front of the chest so the gun silhouette reads from
     // behind — the camera sits over Kai's right shoulder when he aims.
@@ -67,33 +100,27 @@ export class Player {
     const gripMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1e, roughness: 0.6, metalness: 0.2 });
     this.pistol = new THREE.Group();
     const slide = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.22, 1.3), gunMat);
-    slide.position.set(0, 0.06, 0); this.pistol.add(slide);
+    slide.position.set(0, 0.06, 0);
+    this.pistol.add(slide);
     // Dark barrel rib along the top of the slide + front sight: the
     // detail that makes the white bar read as a gun, not a plank.
     const rib = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 1.1), gripMat);
-    rib.position.set(0, 0.2, -0.05); this.pistol.add(rib);
+    rib.position.set(0, 0.2, -0.05);
+    this.pistol.add(rib);
     const sight = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.1, 0.08), gripMat);
-    sight.position.set(0, 0.22, -0.55); this.pistol.add(sight);
+    sight.position.set(0, 0.22, -0.55);
+    this.pistol.add(sight);
     const grip = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.45, 0.22), gripMat);
-    grip.position.set(0, -0.22, 0.28); grip.rotation.x = 0.25; this.pistol.add(grip);
+    grip.position.set(0, -0.22, 0.28);
+    grip.rotation.x = 0.25;
+    this.pistol.add(grip);
     const muzzle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.28), gripMat);
-    muzzle.position.set(0, 0.06, -0.66); this.pistol.add(muzzle);
+    muzzle.position.set(0, 0.06, -0.66);
+    this.pistol.add(muzzle);
     this.pistol.position.set(0.62, 1.32, -0.85);
     this.pistol.rotation.y = -0.3; // barrel angled across the camera view
     this.pistol.visible = false;
     this.group.add(this.pistol);
-    this.aiming = false;
-    for (const lx of [-0.16, 0.16]) {
-      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.75, 0.28), pants);
-      leg.position.set(lx, 0.38, 0); this.group.add(leg);
-    }
-    this.group.position.set(-200, 0, WORLD.pier.z);
-    scene.add(this.group);
-    this.raycaster = new THREE.Raycaster();
-    // Weapon state: 1 FISTS (∞), 2 VESPER pistol (12 mag), 3–5 locked.
-    this.weapon = 1;
-    this.weaponAmmo = 12; // VESPER mag — shooting spends it (12→11)
-    this.weaponLocked = [false, false, true, true, true];
   }
 
   get x() { return this.group.position.x; }
@@ -197,7 +224,8 @@ export class Player {
     if (input.right) mx += 1;
     const len = Math.hypot(mx, mz);
     if (len > 0) {
-      mx /= len; mz /= len;
+      mx /= len;
+      mz /= len;
       // Move relative to camera yaw.
       const yaw = this.camYaw || 0;
       const wx = mx * Math.cos(yaw) - mz * Math.sin(yaw);

@@ -5,13 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SOLARA — an open-world crime game</title>
 <style>
+  /* Base: full-screen canvas, HUD overlay on top, nothing scrolls. */
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #0c1420; font-family: 'Segoe UI', system-ui, sans-serif; color: #eef2f8; }
   #game-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
   .hidden { display: none !important; }
   #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; font-size: 13px; }
   .panel { background: rgba(8, 14, 26, 0.72); border: 1px solid rgba(255,255,255,0.14); border-radius: 8px; padding: 8px 10px; backdrop-filter: blur(2px); }
-  /* Mission, top-left */
+
+  /* Top-left: mission card with stage segments + objective + next job. */
   #hud-mission { position: absolute; top: 12px; left: 12px; width: 300px; }
   #hud-mission-title { font-size: 15px; font-weight: 800; letter-spacing: 0.06em; color: #ffd23f; }
   #hud-mission-stage { font-size: 11px; color: #9fb4d8; letter-spacing: 0.12em; margin-top: 2px; }
@@ -22,7 +24,8 @@
   #hud-mission-next { font-size: 11px; color: #ffd9a0; margin-top: 4px; }
   #hud-timer { display: none; margin-top: 6px; font-size: 18px; font-weight: 800; color: #ff5d5d; }
   #hud-timer.show { display: block; }
-  /* Money / clock / stars, top-right */
+
+  /* Top-right: cash, clock, stars, wanted pill, rank ladder. */
   #hud-top-right { position: absolute; top: 12px; right: 12px; text-align: right; }
   #hud-money { font-size: 26px; font-weight: 800; color: #7dff8a; text-shadow: 0 2px 6px rgba(0,0,0,0.7); }
   #hud-clock { font-size: 15px; font-weight: 700; color: #fff; }
@@ -39,7 +42,8 @@
   #hud-rp-bar { width: 170px; height: 6px; background: rgba(255,255,255,0.18); border-radius: 3px; margin: 3px 0 2px auto; overflow: hidden; }
   #hud-rp-fill { height: 100%; background: linear-gradient(90deg, #ffd23f, #ff7a1a); width: 0%; }
   #hud-rp-text { font-size: 11px; color: #c9d6ea; }
-  /* PCPD panel, top-centre */
+
+  /* Top-centre: PCPD dispatch board. */
   #hud-pcpd { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: 320px; }
   #hud-pcpd .pcpd-head { font-size: 13px; font-weight: 800; letter-spacing: 0.05em; color: #ff8a8a; }
   #hud-pcpd-air { display: none; margin-top: 3px; font-size: 12px; font-weight: 800; color: #ffd23f; letter-spacing: 0.08em; }
@@ -49,7 +53,8 @@
   .pcpd-dist { color: #9fb4d8; width: 52px; text-align: right; }
   .pcpd-status { width: 86px; text-align: right; font-weight: 700; color: #ffb52e; }
   .pcpd-more { font-size: 11px; color: #9fb4d8; }
-  /* Minimap + district, bottom-left */
+
+  /* Bottom-left: circular minimap + district card + vitals. */
   #hud-bottom-left { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 10px; align-items: flex-end; }
   #hud-minimap { border-radius: 50%; border: 2px solid rgba(255,255,255,0.5); background: rgba(10,16,28,0.85); }
   #hud-district-box { width: 190px; }
@@ -65,7 +70,8 @@
   #hud-health-fill { height: 100%; background: #3ddc5f; width: 100%; }
   #hud-armour-fill { height: 100%; background: #5aa9ff; width: 50%; }
   #hud-health-text, #hud-armour-text { font-size: 10px; font-weight: 700; width: 74px; }
-  /* Weapons, bottom-centre-left */
+
+  /* Bottom-centre: weapon slots, crew slots above them. */
   #hud-weapons { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; }
   .wslot { min-width: 86px; padding: 6px 8px; border-radius: 6px; background: rgba(8,14,26,0.72); border: 1px solid rgba(255,255,255,0.14); text-align: center; }
   .wslot.active { border-color: #ff8a1a; background: rgba(255,138,26,0.25); box-shadow: 0 0 10px rgba(255,138,26,0.45); }
@@ -73,7 +79,15 @@
   .wslot .wkey { display: block; font-size: 10px; color: #9fb4d8; }
   .wslot .wname { display: block; font-size: 12px; font-weight: 800; }
   .wslot .wammo { display: block; font-size: 11px; color: #ffd23f; }
-  /* Car / radio, bottom-right */
+  #hud-crew { position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; }
+  .cslot { min-width: 76px; padding: 5px 8px; border-radius: 6px; background: rgba(8,14,26,0.72); border: 1px solid rgba(255,255,255,0.14); text-align: center; }
+  .cslot.ready { border-color: #3ddc5f; }
+  .cslot.cooling { opacity: 0.6; }
+  .cslot .ckey { display: block; font-size: 10px; color: #9fb4d8; }
+  .cslot .cname { display: block; font-size: 12px; font-weight: 800; }
+  .cslot .ccd { display: block; font-size: 11px; color: #3ddc5f; font-weight: 700; }
+
+  /* Bottom-right: radio, car, speed, gear. */
   #hud-bottom-right { position: absolute; right: 12px; bottom: 12px; text-align: right; width: 260px; }
   #hud-radio { font-size: 13px; font-weight: 700; color: #7dff8a; }
   #hud-song { font-size: 11px; color: #b8c6da; margin-top: 2px; }
@@ -85,15 +99,8 @@
   #hud-speed-num { font-size: 30px; font-weight: 800; }
   #hud-speed-unit { font-size: 11px; color: #9fb4d8; }
   #hud-gear { font-size: 13px; font-weight: 800; color: #ffd23f; background: rgba(255,210,63,0.18); padding: 2px 8px; border-radius: 4px; }
-  /* Crew bar, above weapons */
-  #hud-crew { position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; }
-  .cslot { min-width: 76px; padding: 5px 8px; border-radius: 6px; background: rgba(8,14,26,0.72); border: 1px solid rgba(255,255,255,0.14); text-align: center; }
-  .cslot.ready { border-color: #3ddc5f; }
-  .cslot.cooling { opacity: 0.6; }
-  .cslot .ckey { display: block; font-size: 10px; color: #9fb4d8; }
-  .cslot .cname { display: block; font-size: 12px; font-weight: 800; }
-  .cslot .ccd { display: block; font-size: 11px; color: #3ddc5f; font-weight: 700; }
-  /* Dialogue, bottom-centre */
+
+  /* Centre overlays: dialogue, crosshair, prompt, toast, act card. */
   #hud-dialogue { position: absolute; bottom: 110px; left: 50%; transform: translateX(-50%); width: 560px; display: none; align-items: flex-start; gap: 10px; }
   #hud-dialogue.show { display: flex; }
   #hud-portrait { width: 90px; height: 90px; border: 3px solid #ff5da2; border-radius: 6px; flex-shrink: 0; }
@@ -103,22 +110,20 @@
   #hud-dialogue-text { font-size: 14px; line-height: 1.4; margin-top: 4px; }
   #hud-dialogue-reply { display: none; margin-top: 6px; font-size: 13px; color: #ffb52e; font-style: italic; }
   #hud-dialogue-reply.show { display: block; }
-  /* Crosshair */
   #hud-crosshair { position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; margin: -17px 0 0 -17px; display: none; }
   #hud-crosshair.show { display: block; }
   #hud-crosshair .ring { position: absolute; inset: 4px; border: 2px solid #ff3b30; border-radius: 50%; }
   #hud-crosshair .dot { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; background: #ff3b30; border-radius: 50%; }
-  /* Prompt + toast */
   #hud-prompt { position: absolute; bottom: 200px; left: 50%; transform: translateX(-50%); display: none; padding: 7px 14px; background: rgba(8,14,26,0.8); border: 1px solid rgba(255,255,255,0.25); border-radius: 6px; font-size: 14px; font-weight: 700; }
   #hud-prompt.show { display: block; }
   #hud-toast { position: absolute; top: 96px; left: 50%; transform: translateX(-50%); display: none; padding: 8px 18px; background: rgba(20,32,10,0.85); border: 1px solid #7dff8a; border-radius: 6px; font-size: 14px; font-weight: 800; color: #c9ffb0; }
   #hud-toast.show { display: block; }
-  /* Act card */
   #hud-actcard { position: absolute; left: 50%; top: 34%; transform: translate(-50%, -50%); display: none; text-align: center; pointer-events: auto; cursor: pointer; }
   #hud-actcard.show { display: block; }
   #hud-actcard-title { font-size: 44px; font-weight: 900; letter-spacing: 0.14em; color: #ffd23f; text-shadow: 0 4px 18px rgba(0,0,0,0.9); }
   #hud-actcard-sub { font-size: 18px; letter-spacing: 0.2em; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,0.9); }
-  /* Intro + title screens */
+
+  /* Full screens: intro, title, map. */
   .screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 20; background: linear-gradient(180deg, rgba(10,10,30,0.55), rgba(10,10,30,0.85)); text-align: center; pointer-events: auto; }
   .screen h1 { font-size: 84px; font-weight: 900; letter-spacing: 0.18em; color: #ffd23f; text-shadow: 0 6px 30px rgba(0,0,0,0.9); }
   .screen h2 { font-size: 20px; letter-spacing: 0.3em; color: #fff; margin-top: 6px; }
@@ -126,7 +131,6 @@
   .screen .hint { margin-top: 26px; font-size: 13px; color: #9fb4d8; letter-spacing: 0.12em; }
   .screen button { margin-top: 22px; padding: 12px 34px; font-size: 17px; font-weight: 800; letter-spacing: 0.1em; color: #1a1200; background: linear-gradient(180deg, #ffd23f, #ff9a1a); border: none; border-radius: 8px; cursor: pointer; }
   .screen button.secondary { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.35); }
-  /* Map overlay */
   #screen-map { position: fixed; inset: 0; z-index: 15; background: rgba(6,10,20,0.88); display: flex; align-items: center; justify-content: center; gap: 18px; pointer-events: auto; }
   #map-canvas { border: 1px solid rgba(255,255,255,0.25); border-radius: 8px; background: #0c1420; }
   #map-side { width: 300px; color: #eef2f8; }

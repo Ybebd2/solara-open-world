@@ -1,10 +1,10 @@
 // SOLARA — main: the game orchestrator. State machine (intro → title →
 // playing, plus map / paused / shot), third-person camera, input,
 // carjacking, shooting, crew abilities, police/wanted wiring, HUD feed,
-// save/load, and the four frozen dossier shots. Built fresh for the
-// @witty-meteor-32 build.
+// save/load, and the four frozen dossier shots. Re-authored for the
+// @witty-meteor-32 recording-M build.
 import * as THREE from '../vendor/three.module.min.js';
-import { WEAPONS, RADIO, RANKS, DISTRICTS, rankFor, standingLabel, dist2d, clamp } from './config.js';
+import { WEAPONS, RADIO, RANKS, rankFor, condLabel, dist2d, clamp, CLOCK } from './config.js';
 import { World } from './world.js';
 import { Car } from './vehicles.js';
 import { Traffic } from './traffic.js';
@@ -18,11 +18,12 @@ import { AudioEngine } from './audio.js';
 import { blip, starSting } from './sound.js';
 import { Garage } from './garage.js';
 import { saveGame, loadGame } from './save.js';
-import { Shots } from './shots.js';
+import { ShotManager } from './shots.js';
+import { CREW, crewCooldown } from './config.js';
 
-const DAY_START = 17.42; // 17:25 — golden hour opens
-const DAY_END = 19.37;   // 19:22 — night has fallen
-const HOURS_PER_SEC = 1 / 240; // one game-hour per four real minutes
+const DAY_START = CLOCK.startHours; // 17:25 — golden hour opens
+const DAY_END = CLOCK.duskHours;    // 19:22 — night has fallen
+const HOURS_PER_SEC = 1 / CLOCK.secondsPerHour; // one game-hour per four real minutes
 
 export class SOLARA {
   constructor() {
@@ -66,7 +67,7 @@ export class SOLARA {
       // Act title card: live play only — never in shot mode.
       if (!this.shotMode && this.state === 'playing') this.hud.showActCard(act);
     });
-    this.shots = new Shots(this);
+    this.shots = new ShotManager(this);
 
     // Kai's own coupe: orange wedge sports car, parked at the beach
     // road kerb near the pier — the car the player starts beside.
@@ -97,14 +98,13 @@ export class SOLARA {
     this.lastX = 0;
     this.shotReady = false;
     this.pausedFrom = null;
-
-    // Crew abilities: cooldown seconds left, loyalty % (floor 50).
-    this.crew = [
-      { key: 'Z', name: 'MARA', cd: 0, cdMax: 80, loyalty: 100 },
-      { key: 'X', name: 'SULLY', cd: 0, cdMax: 55, loyalty: 100 },
-      { key: 'C', name: 'KIKI', cd: 0, cdMax: 70, loyalty: 100 },
-    ];
+    this.loyalty = 0;
     this.kikiActive = 0; // seconds of patrol reveal left
+
+    // Crew abilities: ready flag + cooldown seconds left. Loyalty
+    // (+1 per finished job, max 10) trims each cooldown 3% a point,
+    // never below half the base cooldown.
+    this.crew = CREW.map((c) => ({ key: c.key, name: c.name, ready: true, cdLeft: 0, cdMax: c.cooldown }));
 
     this.bindInput();
     window.addEventListener('resize', () => this.onResize());
@@ -130,6 +130,11 @@ export class SOLARA {
     this.renderer.setAnimationLoop(() => this.frame());
   }
 
+  // Getters the save system and harness read.
+  get missionIndex() { return this.missions.index; }
+  get px() { return this.player.x; }
+  get pz() { return this.player.z; }
+
   // ---- state transitions -------------------------------------------------
 
   startPlaying() {
@@ -138,6 +143,10 @@ export class SOLARA {
     this.hud.showIntro(false);
     this.hud.showTitle(false);
     this.audio.ensure();
+    if (!this.started) {
+      this.started = true;
+      this.missions.startMission(0);
+    }
   }
 
   toTitle() {
@@ -154,6 +163,8 @@ export class SOLARA {
     if (this.state === 'playing') {
       this.state = 'map';
       this.hud.showMap(true);
+      this.hud.mapView.cx = this.player.x;
+      this.hud.mapView.cz = this.player.z;
       this.hud.renderMap(this.hudState());
     } else if (this.state === 'map') {
       this.state = 'playing';
@@ -316,28 +327,29 @@ export class SOLARA {
 
   // Crew abilities: Z MARA ghost (−1★, blocked if a cruiser is within
   // 30 m), X SULLY pit crew (repair the car to 100%), C KIKI lookout
-  // (reveal every patrol for 20 s). Each use costs 3% loyalty (floor 50).
+  // (reveal every patrol for 20 s). Each use starts its cooldown
+  // (loyalty-trimmed) — a blocked use costs nothing.
   useCrew(i) {
     const c = this.crew[i];
-    if (!c || c.cd > 0) return;
+    if (!c || !c.ready) return;
+    const def = CREW[i];
     if (i === 0) {
       if (this.wanted.stars <= 0) { this.hud.toast('GHOST — no heat to lose'); return; }
       const px = this.player.x, pz = this.player.z;
       const near = this.police.cruisers.some((cr) => dist2d(px, pz, cr.x, cr.z) < 30);
       if (near) { this.hud.toast('GHOST BLOCKED — cruiser too close'); return; }
       this.wanted.addStars(-1);
-      c.cd = c.cdMax; c.loyalty = Math.max(50, c.loyalty - 3);
       this.hud.toast('MARA — GHOST · −1★');
     } else if (i === 1) {
       if (this.player.onFoot || !this.player.car) { this.hud.toast('PIT CREW — get in a car first'); return; }
       this.player.car.condition = 100;
-      c.cd = c.cdMax; c.loyalty = Math.max(50, c.loyalty - 3);
       this.hud.toast('SULLY — PIT CREW · car repaired 100%');
     } else {
-      this.kikiActive = 20;
-      c.cd = c.cdMax; c.loyalty = Math.max(50, c.loyalty - 3);
+      this.kikiActive = def.duration;
       this.hud.toast('KIKI — LOOKOUT · patrols revealed 20s');
     }
+    c.ready = false;
+    c.cdLeft = crewCooldown(def, this.loyalty);
     blip(this.audio, 700);
   }
 
@@ -367,11 +379,7 @@ export class SOLARA {
   }
 
   doSave() {
-    const ok = saveGame({
-      money: this.money, respect: this.respect, rp: this.rp,
-      missionIndex: this.missions.index, hours: this.hours,
-      px: this.player.x, pz: this.player.z,
-    });
+    const ok = saveGame(this);
     this.hud.toast(ok ? 'GAME SAVED' : 'SAVE FAILED');
   }
 
@@ -420,6 +428,10 @@ export class SOLARA {
   }
 
   // ---- HUD state ---------------------------------------------------------
+  // Nested shape the HUD consumes: mission, money/clock/stars, rank,
+  // PCPD rows, weapons, crew, health/armour, district, radio, car,
+  // minimap + map data. The PCPD panel is forced empty at 0 stars so
+  // a staged officer in shot 1 never leaks a panel into the frame.
 
   hudState() {
     const p = this.player;
@@ -427,45 +439,71 @@ export class SOLARA {
     const si = this.missions.stageInfo(px, pz);
     const cur = this.missions.current;
     const rk = rankFor(this.rp);
-    const rank = rk.name, rpNext = rk.next;
     const d = this.districts.info(px, pz);
     const st = RADIO[this.station];
     const inCar = !p.onFoot && !!p.car;
-    const cond = inCar ? p.car.condition : 100;
-    const condLabel = cond >= 75 ? 'PRISTINE' : cond >= 50 ? 'GOOD' : cond >= 25 ? 'DENTED' : 'WRECKED';
+    const stars = this.wanted.stars;
     const weapons = WEAPONS.map((w, i) => ({
-      name: i === 1 ? 'VESPER 9' : w.name,
+      name: w.name,
       ammo: i === 0 ? '∞' : i === 1 ? String(p.weaponAmmo) : String(w.ammo),
       active: p.weapon === w.slot,
       locked: !!p.weaponLocked[i],
     }));
-    const policeDots = this.police.cruisers.map((c) => ({ x: c.x, z: c.z }));
-    const policeAll = [...policeDots];
-    for (const o of this.police.officers) policeAll.push({ x: o.mesh.position.x, z: o.mesh.position.z });
-    if (this.police.heli) policeAll.push({ x: this.police.heli.group.position.x, z: this.police.heli.group.position.z });
+    const blips = [];
+    if (this.kikiActive > 0) {
+      for (const c of this.police.cruisers) blips.push({ x: c.x, z: c.z, col: '#ff5a4e' });
+      for (const o of this.police.officers) blips.push({ x: o.mesh.position.x, z: o.mesh.position.z, col: '#ff5a4e' });
+      if (this.police.heli) blips.push({ x: this.police.heli.group.position.x, z: this.police.heli.group.position.z, col: '#ff5a4e' });
+    }
     return {
-      money: this.money, hours: this.hours, stars: this.wanted.stars,
-      rank: rank, rp: this.rp, rpNext,
-      missionIndex: this.missions.index,
-      missionTitle: cur ? cur.title : 'ALL JOBS DONE',
-      missionStage: `STAGE ${si.index}/${si.total}`,
-      stageIndex: si.index, stageTotal: si.total,
-      objective: si.text, nextObjective: si.next,
-      timer: this.missions.timerLeft,
-      district: d.name, districtLabel: d.label, districtStanding: d.value, districtDesc: d.desc,
-      radio: st.freq, radioGenre: st.genre, song: st.songs[this.songIdx % st.songs.length],
-      inCar, carName: inCar ? p.car.name : '', carSpeed: inCar ? p.car.speed : 0,
-      carCond: cond, carCondLabel: condLabel, carGear: inCar ? p.car.gear : 1,
-      weapons, crew: this.crew.map((c) => ({ ready: c.cd <= 0, cdLeft: Math.max(0, c.cd) })),
-      evading: this.wanted.evading, hidden: this.wanted.hidden,
-      wanted: this.wanted.stars > 0,
-      px, pz, heading: p.heading,
-      police: policeDots, policeAll, reveal: this.kikiActive > 0,
-      target: cur ? cur.target : null,
-      health: p.health, armour: p.armour, respect: this.respect,
-      standing: this.districts.standing,
+      mission: cur ? {
+        chapter: `CH.${this.missions.index + 1}`,
+        title: cur.title,
+        stage: si.index,
+        stages: si.total,
+        objective: si.text,
+        next: si.next,
+      } : null,
+      missionIdx: this.missions.index,
+      money: this.money,
+      clock: this.clockText(),
+      stars,
+      wantedLabel: stars > 0 ? (this.wanted.hidden ? 'HIDDEN' : 'IN SIGHT') : '',
+      rankName: rk.name,
+      rpPct: rk.next ? clamp(((this.rp - RANKS[rk.index].at) / (rk.next - RANKS[rk.index].at)) * 100, 0, 100) : 100,
+      rpText: rk.next ? `RP ${this.rp} / ${rk.next}` : `RP ${this.rp} — MAX`,
+      pcpdUnits: stars > 0 ? this.police.unitsForHud(px, pz, this.wanted.evading) : [],
+      airDeployed: this.police.airDeployed,
+      code: HUD.pcpdCode(stars),
+      evadeText: stars > 0 && this.wanted.evading > 0 ? `EVADING ${Math.floor(this.wanted.evading)}%` : '',
+      weapons,
+      crew: this.crew,
+      health: p.health,
+      armour: p.armour,
+      district: { name: d.name, standing: d.value, desc: d.desc },
+      respect: this.respect,
+      radio: { freq: st.freq, genre: st.genre, song: st.songs[this.songIdx % st.songs.length] },
+      car: inCar ? {
+        name: p.car.name,
+        condText: `${condLabel(p.car.condition)} ${Math.round(p.car.condition)}%`,
+        cond: p.car.condition,
+        speed: String(Math.round(Math.abs(p.car.speed) * 3.6)),
+        gear: 'G' + p.car.gear,
+      } : null,
+      speed: String(Math.round(p.speed * 3.6)),
+      timerText: this.missions.timerLeft ? `⏱ ${this.missions.timerLeft}s` : '',
+      player: { x: px, z: pz, yaw: p.heading },
       waypoint: this.hud.mapView.waypoint,
+      target: cur ? cur.target : null,
+      blips,
+      districtsHeld: Object.values(this.districts.standing).filter((v) => v >= 70).length,
     };
+  }
+
+  clockText() {
+    const hh = Math.floor(this.hours);
+    const mm = Math.floor((this.hours - hh) * 60);
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
   }
 
   // ---- shots -------------------------------------------------------------
@@ -483,19 +521,7 @@ export class SOLARA {
     if (this.player.car) this.player.car.setDusk(this.duskT);
     // HUD refresh for the frozen frame: mission, stars, PCPD rows,
     // minimap, dialogue, toast. Crosshair on the two Kai-first shots.
-    // The PCPD panel only shows while wanted — at 0 stars (shot 1) it
-    // stays hidden even though a staged officer stands in the scene.
-    const s = this.hudState();
-    this.hud.update(s);
-    if (s.stars > 0) {
-      this.hud.setPcpd(
-        this.police.unitsForHud(s.px, s.pz, s.evading),
-        this.police.airDeployed,
-        HUD.pcpdCode(s.stars)
-      );
-    } else {
-      this.hud.setPcpd([], false, 0);
-    }
+    this.hud.update(this.hudState(), 0);
     this.hud.setCrosshair(n === 1 || n === 2);
     this.renderer.render(this.scene, this.camera);
     this.shotReady = true;
@@ -616,6 +642,7 @@ export class SOLARA {
       this.money += m.reward;
       this.respect += respectGain;
       this.rp += respectGain * 20;
+      this.loyalty = Math.min(10, this.loyalty + 1);
       this.districts.bumpAt(m.target.x, m.target.z, 8);
       this.hud.toast(`JOB DONE — +$${m.reward.toLocaleString('en-US')} · +${respectGain} respect · +${respectGain * 20} RP`);
       this.audio.cash();
@@ -625,21 +652,17 @@ export class SOLARA {
     }
 
     // Crew cooldowns + Kiki reveal timer.
-    for (const c of this.crew) if (c.cd > 0) c.cd = Math.max(0, c.cd - dt);
+    for (const c of this.crew) {
+      if (!c.ready) {
+        c.cdLeft -= dt;
+        if (c.cdLeft <= 0) { c.ready = true; c.cdLeft = 0; }
+      }
+    }
     if (this.kikiActive > 0) this.kikiActive = Math.max(0, this.kikiActive - dt);
 
     // HUD.
     const s = this.hudState();
-    this.hud.update(s);
-    if (this.wanted.stars > 0) {
-      this.hud.setPcpd(
-        this.police.unitsForHud(px, pz, this.wanted.evading),
-        this.police.airDeployed,
-        HUD.pcpdCode(this.wanted.stars)
-      );
-    } else {
-      this.hud.setPcpd([], false, 0);
-    }
+    this.hud.update(s, dt);
     this.hud.setCrosshair(p.onFoot && p.weapon === 2 && p.aiming);
     // Context prompt: nearest car to steal / enter.
     if (p.onFoot) {

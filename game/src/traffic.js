@@ -2,7 +2,7 @@
 // kerb + scooter riders on the beach road. NaN guard: speed is clamped
 // only for cars that HAVE a cruise speed; parked cars have cruise ===
 // undefined and must never go through Math.min(speed, undefined).
-// Built fresh for the @witty-meteor-32 build.
+// Re-authored for the @witty-meteor-32 recording-M build.
 import { Car, makeScooterMesh } from './vehicles.js';
 import { WORLD, BEACH_ROAD, rand, pick, clamp } from './config.js';
 
@@ -12,12 +12,18 @@ import { WORLD, BEACH_ROAD, rand, pick, clamp } from './config.js';
 const TRAFFIC_TYPES = ['sedan', 'sedan', 'taxi', 'pickup', 'sports', 'van'];
 const TRAFFIC_COLORS = [0xe86a2a, 0x2fb5a8, 0x9a5fd9, 0xf2d13c, 0xe8e8e8, 0xd93a3a, 0x3f9a4a, 0x3f6fb5, 0xe89ac0, 0x8a8a8a];
 
+function streetLines() {
+  const lines = [];
+  for (let s = WORLD.streetMin; s <= WORLD.streetMax; s += WORLD.streetStep) lines.push(s);
+  return lines;
+}
+
 export class Traffic {
   constructor(scene) {
     this.scene = scene;
-    this.cars = [];     // all cars (moving + parked)
-    this.moving = [];   // { car, cruise, axis, dir }
-    this.parked = [];   // Car, cruise === undefined
+    this.cars = []; // all cars (moving + parked)
+    this.moving = []; // { car, cruise, axis, dir }
+    this.parked = []; // Car, cruise === undefined
     this.scooters = []; // { mesh, z, dir, speed }
     this.spawnMoving();
     this.spawnParked();
@@ -39,8 +45,7 @@ export class Traffic {
   }
 
   spawnMoving() {
-    const streets = [];
-    for (let s = WORLD.streetMin; s <= WORLD.streetMax; s += WORLD.streetStep) streets.push(s);
+    const streets = streetLines();
     for (let i = 0; i < 18; i++) {
       const type = pick(TRAFFIC_TYPES);
       // The first six cars are biased onto the beach road, so the
@@ -72,8 +77,7 @@ export class Traffic {
   }
 
   spawnParked() {
-    const streets = [];
-    for (let s = WORLD.streetMin; s <= WORLD.streetMax; s += WORLD.streetStep) streets.push(s);
+    const streets = streetLines();
     for (let i = 0; i < 16; i++) {
       const type = pick(['sedan', 'sedan', 'pickup', 'taxi', 'sports', 'van']);
       const axis = Math.random() < 0.5 ? 'x' : 'z';
