@@ -1,9 +1,12 @@
-// SOLARA — missions and the story. Kai Mercer is back in Solara and Mara,
-// the fixer who got him out, has work. Six jobs in a chain: meet Mara, steal
-// a car, lose the heat, run a delivery, survive a getaway, and finish as the
-// king of the city. Each mission names its target on the map and in the HUD;
-// finishing one pays cash and opens the next. The manager only tracks state —
-// the game decides when a mission's condition is met.
+// SOLARA v3 — missions and the story. Kai Mercer is back in Solara and
+// Lupe, the fixer who got him out, has work. Eight jobs in a chain across
+// the city's named districts: meet Lupe, steal a car, lose the heat, run a
+// delivery, survive a getaway, run Neon Row, work the Old Port, and finish
+// as the king of the city. Each mission opens with a line of dialogue from
+// its character (Lupe, Sully, Marco, Brandt, Aurora) and names its target on
+// the map and in the HUD; finishing one pays cash and respect and opens the
+// next. The manager only tracks state — the game decides when a mission's
+// condition is met.
 
 import { CONFIG } from './config.js';
 
@@ -11,12 +14,15 @@ import { CONFIG } from './config.js';
 // type: goto (reach the marker), steal (be in a stolen car), lose (clear
 // wanted), timed (reach the marker before the clock), escape (reach the
 // marker AND have no wanted stars when you get there), collect (visit all
-// markers), finale (visit all markers then return to Mara).
+// markers), finale (visit all markers then return to Lupe).
+// dialogue: the line the character says when the job opens.
 export const MISSIONS = [
   {
-    id: 'meet-mara',
-    title: 'Meet Mara',
-    text: 'Mara is waiting on the pier. Go and see her — she has work for you.',
+    id: 'meet-lupe',
+    title: 'Meet Lupe',
+    speaker: 'Lupe',
+    dialogue: 'Kai. You\u2019re out. I got you out, now you work for me — come to the pier and we\u2019ll talk.',
+    text: 'Lupe is waiting on the pier. Go and see her — she has work for you. (WASD to move, Shift to run.)',
     target: 'pier',
     radius: 6,
     type: 'goto',
@@ -25,7 +31,9 @@ export const MISSIONS = [
   {
     id: 'borrow-a-car',
     title: 'Borrow a Car',
-    text: 'Mara needs wheels. Take any car on the street (E to enter) and bring it to the downtown marker.',
+    speaker: 'Sully',
+    dialogue: 'Need wheels? Take any car on the street — walk up to the driver\u2019s door and press F. The owner will run.',
+    text: 'Sully needs wheels. Take any car on the street (F to carjack) and bring it to the downtown marker.',
     target: 'downtown',
     radius: 8,
     type: 'steal',
@@ -34,6 +42,8 @@ export const MISSIONS = [
   {
     id: 'lose-the-heat',
     title: 'Lose the Heat',
+    speaker: 'Lupe',
+    dialogue: 'You stole a car and the PCPD is on you. Stay out of sight — when the evading meter fills, you\u2019re clear.',
     text: 'Stealing a car put the Solara Police on you. Stay out of sight until the stars are gone.',
     target: null,
     radius: 0,
@@ -43,6 +53,8 @@ export const MISSIONS = [
   {
     id: 'the-delivery',
     title: 'The Delivery',
+    speaker: 'Marco',
+    dialogue: 'A package for the north gate. Ninety seconds, Kai — the client does not wait, and the cops do not either.',
     text: 'A package for the north gate. Drive it there in 90 seconds — the client does not wait.',
     target: 'northGate',
     radius: 8,
@@ -53,6 +65,8 @@ export const MISSIONS = [
   {
     id: 'the-getaway',
     title: 'The Getaway',
+    speaker: 'Brandt',
+    dialogue: 'The job went loud. Get to the beach with the police on your tail — and lose them there before the job counts.',
     text: 'The job went loud. Get to the beach with the police on your tail — and lose them there before the job counts.',
     target: 'beach',
     radius: 10,
@@ -60,14 +74,40 @@ export const MISSIONS = [
     reward: 1200,
   },
   {
+    id: 'neon-row-run',
+    title: 'Neon Row Run',
+    speaker: 'Aurora',
+    dialogue: 'Three drops in Neon Row, and make it quick. The lights are pretty, the cops are not.',
+    text: 'Three drops around Neon Row, then the job is done. The lights are pretty, the cops are not.',
+    target: 'neonRow',
+    radius: 8,
+    type: 'collect',
+    collect: ['neonRow', 'cityCentre', 'malecon'],
+    reward: 1500,
+  },
+  {
+    id: 'old-port-job',
+    title: 'The Old Port Job',
+    speaker: 'Sully',
+    dialogue: 'Crates at the Old Port, Kai. Grab them all and bring them to the safehouse. Quiet this time.',
+    text: 'Grab the crates at the Old Port, then bring them to the safehouse. Quiet this time.',
+    target: 'safehouse',
+    radius: 8,
+    type: 'collect',
+    collect: ['oldPort', 'palmHeights', 'raceStart'],
+    reward: 1800,
+  },
+  {
     id: 'king-of-solara',
     title: 'King of Solara',
-    text: 'Three drops around the city, then back to Mara on the pier. Do it clean and the city is yours.',
+    speaker: 'Lupe',
+    dialogue: 'One last run, Kai. Three drops, then back to me on the pier. Do it clean and the city is yours.',
+    text: 'Three drops around the city, then back to Lupe on the pier. Do it clean and the city is yours.',
     target: 'pier',
     radius: 6,
     type: 'collect',
     collect: ['downtown', 'cityCentre', 'beach'],
-    reward: 2000,
+    reward: 2500,
   },
 ];
 
@@ -84,6 +124,11 @@ export class MissionManager {
 
   current() {
     return MISSIONS[this.index] ?? null;
+  }
+
+  // The next mission after the current one, for the HUD's "next" line.
+  next() {
+    return MISSIONS[this.index + 1] ?? null;
   }
 
   // Chain progress for the HUD and the pause screen: { done, total }.

@@ -1,16 +1,22 @@
-// SOLARA — the city. A procedural sun-soaked coastal city: a grid of blocks
-// with roads between them, buildings with lit windows, palms, streetlights,
-// a beach and a pier on the south side, and the ocean beyond. Everything is
-// built from three.js geometry with materials made in code — no external
-// assets, so the game runs offline. The module also hands the rest of the game
-// the road network (for traffic), the building footprints (for collision) and
-// named places (for missions).
+// SOLARA v3 — the city. A procedural sun-soaked coastal city at golden
+// hour: a grid of blocks with roads between them, pastel buildings with red
+// roofs and neon signs, palms, streetlights, a beach and a pier on the south
+// side, and the ocean beyond. Everything is built from three.js geometry
+// with materials made in code — no external assets, so the game runs offline.
+//
+// v3: an in-game clock drives golden hour into dusk — the sky, sun, fog and
+// streetlights all follow it; buildings are detailed (setbacks, red roof
+// trim, rooftop plant, neon signs, named landmarks) instead of plain boxes;
+// the sidewalks are purple; named districts cover the map; ten Sunset Shard
+// collectibles are hidden around the city. The module hands the rest of the
+// game the road network (for traffic), the building footprints (for
+// collision), named places (for missions) and the district lookup.
 
 import * as THREE from 'three';
-import { CONFIG, makeRandom, pick } from './config.js';
+import { CONFIG, DISTRICTS, makeRandom, pick, clamp } from './config.js';
 
-// A canvas texture of windows: dark glass on a lit facade. One texture is
-// shared by every building; the building's own colour tints it.
+// A canvas texture of windows: warm lit glass on a coloured facade. One
+// texture is shared by every building; the building's own colour tints it.
 function makeWindowTexture() {
   const c = document.createElement('canvas');
   c.width = 128;
@@ -21,8 +27,8 @@ function makeWindowTexture() {
   const rand = makeRandom(99);
   for (let y = 8; y < 248; y += 18) {
     for (let x = 8; x < 120; x += 18) {
-      const lit = rand() < 0.35;
-      g.fillStyle = lit ? '#ffd98a' : '#2a3644';
+      const lit = rand() < 0.45;
+      g.fillStyle = lit ? '#ffd98a' : '#3a2a3a';
       g.fillRect(x, y, 12, 12);
     }
   }
@@ -37,7 +43,7 @@ function makeRoadTexture() {
   c.width = 64;
   c.height = 64;
   const g = c.getContext('2d');
-  g.fillStyle = '#2e3138';
+  g.fillStyle = '#33313a';
   g.fillRect(0, 0, 64, 64);
   g.fillStyle = '#f5c542';
   g.fillRect(30, 0, 4, 28);
@@ -49,10 +55,46 @@ function makeRoadTexture() {
   return t;
 }
 
-// Build the city. Returns { group, roads, buildings, sidewalks, places }.
-// roads: { horizontal: [ { z, x0, x1 } ], vertical: [ { x, z0, z1 } ] } — the
-// centre lines traffic follows. buildings: [{ minX, maxX, minZ, maxZ }] for
-// collision. places: named spots missions use.
+// A neon sign: glowing coloured text on a dark plate, mounted on a facade.
+function makeNeonTexture(text, colour) {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#140a1e';
+  g.fillRect(0, 0, 256, 64);
+  g.font = 'bold 34px system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.shadowColor = colour;
+  g.shadowBlur = 18;
+  g.fillStyle = colour;
+  g.fillText(text, 128, 34);
+  g.shadowBlur = 0;
+  g.fillStyle = '#ffffff';
+  g.fillText(text, 128, 34);
+  const t = new THREE.CanvasTexture(c);
+  return t;
+}
+
+// Golden-hour sky stops: the clock runs 17.5 (gold) -> 19.5 (purple dusk).
+// Each stop is { sky, fog, sun, sunIntensity, hemi }.
+const SKY_STOPS = [
+  { h: 17.5, sky: 0xff9e57, fog: 0xf2a35e, sun: 0xffc46b, sunI: 2.6, hemi: 0.95 },
+  { h: 18.25, sky: 0xf27a6b, fog: 0xe87a7a, sun: 0xff8f5e, sunI: 2.2, hemi: 0.85 },
+  { h: 19.0, sky: 0x9b5f9e, fog: 0x8a5a8e, sun: 0xff7a9e, sunI: 1.6, hemi: 0.7 },
+  { h: 19.75, sky: 0x4a3a6e, fog: 0x3a2f5e, sun: 0xb06ab0, sunI: 1.1, hemi: 0.55 },
+];
+
+function lerpColor(a, b, t) {
+  const ca = new THREE.Color(a);
+  const cb = new THREE.Color(b);
+  return ca.lerp(cb, t);
+}
+
+// Build the city. Returns { group, roads, buildings, sidewalks, places,
+// clouds, half, setClock, clockHours, namedBuildings, collectibles,
+// districtAt, streetlights }.
 export function buildWorld(scene) {
   const rand = makeRandom(20261119);
   const group = new THREE.Group();
@@ -63,25 +105,56 @@ export function buildWorld(scene) {
   const windowTex = makeWindowTexture();
   const roadTex = makeRoadTexture();
 
-  // Sky, sun and fog: a warm late afternoon.
-  scene.background = new THREE.Color(0x87b5d6);
-  scene.fog = new THREE.Fog(0x9fc3dd, 220, 620);
-  const sun = new THREE.DirectionalLight(0xffe0a8, 2.4);
-  sun.position.set(120, 180, 60);
+  // The sun and the sky, driven by the in-game clock (see setClock below).
+  const sun = new THREE.DirectionalLight(0xffc46b, 2.6);
+  sun.position.set(160, 120, 40);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.left = -260;
   sun.shadow.camera.right = 260;
   sun.shadow.camera.top = 260;
   sun.shadow.camera.bottom = -260;
-  sun.shadow.camera.far = 600;
+  sun.shadow.camera.far = 700;
   scene.add(sun);
-  scene.add(new THREE.HemisphereLight(0xbfd9ff, 0x8a7a5a, 0.9));
+  const hemi = new THREE.HemisphereLight(0xffd9b0, 0x8a5a6a, 0.95);
+  scene.add(hemi);
+  scene.background = new THREE.Color(0xff9e57);
+  scene.fog = new THREE.Fog(0xf2a35e, 220, 640);
 
-  // Ground: grass and sand base under everything.
+  // The clock: hours since midnight. setClock moves the whole atmosphere.
+  let clockHours = CONFIG.CLOCK_START_HOURS;
+  function setClock(hours) {
+    clockHours = hours;
+    const stops = SKY_STOPS;
+    let a = stops[0];
+    let b = stops[stops.length - 1];
+    let t = 0;
+    for (let i = 0; i < stops.length - 1; i++) {
+      if (hours >= stops[i].h && hours <= stops[i + 1].h) {
+        a = stops[i];
+        b = stops[i + 1];
+        t = (hours - a.h) / (b.h - a.h);
+        break;
+      }
+    }
+    if (hours < stops[0].h) { a = stops[0]; b = stops[0]; t = 0; }
+    if (hours > stops[stops.length - 1].h) { a = stops[stops.length - 1]; b = stops[stops.length - 1]; t = 0; }
+    scene.background.copy(lerpColor(a.sky, b.sky, t));
+    scene.fog.color.copy(lerpColor(a.fog, b.fog, t));
+    sun.color.copy(lerpColor(a.sun, b.sun, t));
+    sun.intensity = a.sunI + (b.sunI - a.sunI) * t;
+    hemi.intensity = a.hemi + (b.hemi - a.hemi) * t;
+    // The sun sinks as the evening goes on: long shadows at golden hour.
+    const sink = clamp((hours - 17.5) / 2.25, 0, 1);
+    sun.position.set(160 - sink * 60, 120 - sink * 75, 40 + sink * 30);
+    return hours >= CONFIG.DUSK_HOURS;
+  }
+  setClock(clockHours);
+
+  // Ground: warm grass and sand base under everything.
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(1200, 1200),
-    new THREE.MeshLambertMaterial({ color: 0x7fae62 })
+    new THREE.MeshLambertMaterial({ color: 0x86a85e })
   );
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.05;
@@ -110,8 +183,8 @@ export function buildWorld(scene) {
     roads.vertical.push({ x, z0: -half - ROAD, z1: half + ROAD });
   }
 
-  // Sidewalks: pale strips along each block edge.
-  const walkMat = new THREE.MeshLambertMaterial({ color: 0xb9b3a4 });
+  // Sidewalks: purple strips along each block edge (the city's signature).
+  const walkMat = new THREE.MeshLambertMaterial({ color: 0x9b7ec2 });
   const sidewalks = [];
   for (let bx = 0; bx < GRID; bx++) {
     for (let bz = 0; bz < GRID; bz++) {
@@ -126,25 +199,41 @@ export function buildWorld(scene) {
     }
   }
 
-  // Buildings: 1-3 towers per block, varied heights and tints, with a few
-  // rooftop details. The south row (nearest the beach) stays low.
+  // Named landmarks: a few buildings get a name, a neon sign and a taller,
+  // more detailed treatment, so the skyline has places you can point at.
+  const LANDMARKS = [
+    { name: 'SOLARA TOWER', block: [3, 1], colour: 0xf2a7a0, sign: '#ff5a8a' },
+    { name: 'THE PALMS', block: [5, 2], colour: 0x7fd1c0, sign: '#37e0c8' },
+    { name: 'NEON CASINO', block: [3, 3], colour: 0x9b8cf2, sign: '#ffd23f' },
+    { name: 'LUPE\u2019S DINER', block: [1, 5], colour: 0xf7b267, sign: '#ff9e57' },
+    { name: 'PORT HOTEL', block: [6, 4], colour: 0x6ec6e8, sign: '#7fd1ff' },
+  ];
+  const landmarkByBlock = new Map(LANDMARKS.map((l) => [`${l.block[0]},${l.block[1]}`, l]));
+  const namedBuildings = [];
+
+  // Buildings: 1-3 per block, varied heights and pastel tints, with setbacks,
+  // red roof trim, rooftop plant and neon signs — not plain boxes.
   const buildings = [];
   const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+  const neonSigns = ['HOTEL', 'BAR', 'CLUB', 'CAFE', 'TACOS', 'PIER', 'SHOP', 'DANCE'];
   for (let bx = 0; bx < GRID; bx++) {
     for (let bz = 0; bz < GRID; bz++) {
       const cx = -half + ROAD + bx * pitch + BLOCK / 2;
       const cz = -half + ROAD + bz * pitch + BLOCK / 2;
       const nearBeach = bz === GRID - 1;
-      const count = nearBeach ? 1 : 1 + Math.floor(rand() * 3);
+      const landmark = landmarkByBlock.get(`${bx},${bz}`);
+      const count = landmark ? 1 : nearBeach ? 1 : 1 + Math.floor(rand() * 3);
       for (let k = 0; k < count; k++) {
         const w = 12 + rand() * 18;
         const d = 12 + rand() * 18;
-        const h = nearBeach
-          ? 8 + rand() * 10
-          : CONFIG.BUILD_MIN_H + rand() * (CONFIG.BUILD_MAX_H - CONFIG.BUILD_MIN_H);
+        const h = landmark
+          ? 52 + rand() * 20
+          : nearBeach
+            ? 8 + rand() * 10
+            : CONFIG.BUILD_MIN_H + rand() * (CONFIG.BUILD_MAX_H - CONFIG.BUILD_MIN_H);
         const ox = (rand() - 0.5) * (BLOCK - w - 6);
         const oz = (rand() - 0.5) * (BLOCK - d - 6);
-        const colour = pick(rand, CONFIG.BUILD_COLORS);
+        const colour = landmark ? landmark.colour : pick(rand, CONFIG.BUILD_COLORS);
         const mat = new THREE.MeshLambertMaterial({ color: colour, map: windowTex });
         const b = new THREE.Mesh(boxGeo, mat);
         b.scale.set(w, h, d);
@@ -152,13 +241,47 @@ export function buildWorld(scene) {
         b.castShadow = true;
         b.receiveShadow = true;
         group.add(b);
-        // Rooftop box, for a skyline that is not flat.
-        if (rand() < 0.5) {
-          const roof = new THREE.Mesh(boxGeo, new THREE.MeshLambertMaterial({ color: 0x8a8f96 }));
-          roof.scale.set(w * 0.3, 2.5, d * 0.3);
-          roof.position.set(cx + ox, h + 1.25, cz + oz);
-          group.add(roof);
+        // Setback: a smaller top floor, so the silhouette steps in.
+        if (h > 20 && rand() < 0.7) {
+          const top = new THREE.Mesh(boxGeo, new THREE.MeshLambertMaterial({ color: colour, map: windowTex }));
+          const tw = w * (0.55 + rand() * 0.2);
+          const td = d * (0.55 + rand() * 0.2);
+          const th = 4 + rand() * 6;
+          top.scale.set(tw, th, td);
+          top.position.set(cx + ox, h + th / 2, cz + oz);
+          top.castShadow = true;
+          group.add(top);
         }
+        // Red roof trim: a thin red slab capping the roof.
+        const roofMat = new THREE.MeshLambertMaterial({ color: pick(rand, CONFIG.ROOF_COLORS) });
+        const roof = new THREE.Mesh(boxGeo, roofMat);
+        roof.scale.set(w + 0.6, 0.8, d + 0.6);
+        roof.position.set(cx + ox, h + 0.4, cz + oz);
+        group.add(roof);
+        // Rooftop plant: an AC box and sometimes an antenna or water tower.
+        if (rand() < 0.6) {
+          const ac = new THREE.Mesh(boxGeo, new THREE.MeshLambertMaterial({ color: 0x8a8f96 }));
+          ac.scale.set(w * 0.22, 2, d * 0.22);
+          ac.position.set(cx + ox + w * 0.2, h + 1.8, cz + oz);
+          group.add(ac);
+        }
+        if (rand() < 0.3) {
+          const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.2, 9, 6), new THREE.MeshLambertMaterial({ color: 0x3a3f46 }));
+          ant.position.set(cx + ox - w * 0.25, h + 5, cz + oz);
+          group.add(ant);
+        }
+        // Neon sign on the facade, facing the nearest road.
+        const signText = landmark ? landmark.name : pick(rand, neonSigns);
+        const signColour = landmark ? landmark.sign : pick(rand, ['#ff5a8a', '#37e0c8', '#ffd23f', '#7fd1ff', '#ff9e57']);
+        const sign = new THREE.Mesh(
+          new THREE.PlaneGeometry(landmark ? 22 : 12, landmark ? 5.5 : 3),
+          new THREE.MeshBasicMaterial({ map: makeNeonTexture(signText, signColour), transparent: true })
+        );
+        const faceSouth = oz >= 0;
+        sign.position.set(cx + ox, Math.min(h * 0.6, 18), cz + oz + (faceSouth ? d / 2 + 0.15 : -d / 2 - 0.15));
+        if (!faceSouth) sign.rotation.y = Math.PI;
+        group.add(sign);
+        if (landmark) namedBuildings.push({ name: landmark.name, x: cx + ox, z: cz + oz, h });
         buildings.push({
           minX: cx + ox - w / 2, maxX: cx + ox + w / 2,
           minZ: cz + oz - d / 2, maxZ: cz + oz + d / 2,
@@ -172,10 +295,9 @@ export function buildWorld(scene) {
   const frondMat = new THREE.MeshLambertMaterial({ color: 0x3f8f4f });
   const trunkGeo = new THREE.CylinderGeometry(0.35, 0.5, 9, 6);
   const frondGeo = new THREE.ConeGeometry(2.6, 3.2, 6);
-  for (let i = 0; i < 90; i++) {
+  for (let i = 0; i < 110; i++) {
     const x = -half + rand() * GRID * pitch;
     const z = -half + rand() * GRID * pitch;
-    // Keep palms on sidewalks, out of the road and out of buildings.
     if (buildings.some((b) => x > b.minX - 2 && x < b.maxX + 2 && z > b.minZ - 2 && z < b.maxZ + 2)) continue;
     const trunk = new THREE.Mesh(trunkGeo, trunkMat);
     trunk.position.set(x, 4.5, z);
@@ -187,24 +309,26 @@ export function buildWorld(scene) {
     group.add(frond);
   }
 
-  // Streetlights at intersections.
+  // Streetlights at intersections; their lamps glow once dusk falls.
   const poleMat = new THREE.MeshLambertMaterial({ color: 0x3a3f46 });
-  const lampMat = new THREE.MeshBasicMaterial({ color: 0xffe9a8 });
   const poleGeo = new THREE.CylinderGeometry(0.12, 0.12, 7, 6);
   const lampGeo = new THREE.SphereGeometry(0.5, 8, 6);
+  const streetlights = [];
   for (const z of roadLines) {
     for (const x of roadLines) {
       if (rand() < 0.4) continue;
       const pole = new THREE.Mesh(poleGeo, poleMat);
       pole.position.set(x + ROAD / 2 + 1, 3.5, z + ROAD / 2 + 1);
       group.add(pole);
+      const lampMat = new THREE.MeshBasicMaterial({ color: 0xffe9a8 });
       const lamp = new THREE.Mesh(lampGeo, lampMat);
       lamp.position.set(x + ROAD / 2 + 1, 7.1, z + ROAD / 2 + 1);
       group.add(lamp);
+      streetlights.push(lampMat);
     }
   }
 
-  // Beach and ocean on the south side, with a pier Mara waits on.
+  // Beach and ocean on the south side, with a pier Lupe waits on.
   const beach = new THREE.Mesh(
     new THREE.PlaneGeometry(GRID * pitch + 120, 40),
     new THREE.MeshLambertMaterial({ color: 0xe8d9a0 })
@@ -226,8 +350,22 @@ export function buildWorld(scene) {
   pier.castShadow = true;
   group.add(pier);
 
-  // A few clouds, drifting slowly (animated by main.js).
-  const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+  // Sunset Shards: ten glowing collectibles hidden around the city.
+  const collectibles = [];
+  const shardGeo = new THREE.OctahedronGeometry(0.9);
+  const shardMat = new THREE.MeshBasicMaterial({ color: 0xffd23f });
+  for (let i = 0; i < CONFIG.COLLECTIBLE_COUNT; i++) {
+    const x = -half + 20 + rand() * (GRID * pitch - 40);
+    const z = -half + 20 + rand() * (GRID * pitch - 40);
+    if (buildings.some((b) => x > b.minX - 3 && x < b.maxX + 3 && z > b.minZ - 3 && z < b.maxZ + 3)) continue;
+    const shard = new THREE.Mesh(shardGeo, shardMat);
+    shard.position.set(x, 1.4, z);
+    group.add(shard);
+    collectibles.push({ mesh: shard, x, z, taken: false, spin: rand() * Math.PI * 2 });
+  }
+
+  // A few clouds, drifting slowly (animated by main.js), pink at dusk.
+  const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffd9c0, transparent: true, opacity: 0.85 });
   const clouds = [];
   for (let i = 0; i < 10; i++) {
     const cloud = new THREE.Group();
@@ -248,9 +386,30 @@ export function buildWorld(scene) {
     beach: { x: 30, z: half + ROAD + 14 },
     northGate: { x: 0, z: -half - ROAD },
     cityCentre: { x: 0, z: 0 },
+    // v3 places: the garage, the arms shop, the safehouse, the race start,
+    // and the district centres the new missions use.
+    garage: { x: -half + ROAD + BLOCK / 2 + 30, z: -half + ROAD + BLOCK / 2 },
+    armsShop: { x: half - ROAD - BLOCK / 2, z: -half + ROAD + BLOCK / 2 },
+    safehouse: { x: -half + ROAD + BLOCK / 2, z: half - ROAD - BLOCK / 2 },
+    raceStart: { x: half - ROAD - BLOCK / 2, z: half - ROAD - BLOCK / 2 },
+    neonRow: { x: 0, z: 30 },
+    palmHeights: { x: -half + ROAD + BLOCK / 2, z: 0 },
+    oldPort: { x: half - ROAD - BLOCK / 2, z: 0 },
+    malecon: { x: 0, z: half + ROAD + 8 },
   };
 
-  return { group, roads, buildings, sidewalks, places, clouds, half };
+  function districtAt(x, z) {
+    for (const d of DISTRICTS) {
+      if (x >= d.x0 && x <= d.x1 && z >= d.z0 && z <= d.z1) return d.name;
+    }
+    return 'Solara';
+  }
+
+  return {
+    group, roads, buildings, sidewalks, places, clouds, half,
+    setClock, get clockHours() { return clockHours; },
+    namedBuildings, collectibles, districtAt, streetlights,
+  };
 }
 
 // True when the point (x, z) is inside a building footprint (with margin).

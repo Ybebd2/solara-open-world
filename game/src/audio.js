@@ -1,9 +1,16 @@
-// SOLARA — sound, synthesized with the Web Audio API. No audio files: every
-// effect is an oscillator or a noise buffer shaped in code, so the game loads
-// nothing over the network. The engine hum follows the car's speed, the siren
-// wails while the player is wanted, and the rest are one-shots. Sound can be
-// muted (toggleMute) or turned down (setVolume); while muted every effect and
-// both loops stay silent.
+// SOLARA v3 — sound, synthesized with the Web Audio API. No audio files:
+// every effect is an oscillator or a noise buffer shaped in code, so the game
+// loads nothing over the network. The engine hum follows the car's speed,
+// the siren wails while the player is wanted, and the rest are one-shots.
+// Sound can be muted (toggleMute) or turned down (setVolume); while muted
+// every effect and both loops stay silent.
+//
+// v3: a radio with two stations (SOLARA FM 98.1 and NEON 101.5), each with
+// its own melody and a song list — R switches stations and the song changes
+// on its own; a car horn (H); and a helicopter rotor that spins up while
+// AIR-1 is overhead.
+
+import { RADIO } from './config.js';
 
 export class Sound {
   constructor() {
@@ -15,6 +22,14 @@ export class Sound {
     this.sirenGain = null;
     this.enabled = true;
     this.volume = 0.5;
+    // v3 radio.
+    this.stationIndex = 0;
+    this.songIndex = 0;
+    this.radioTimer = 0;
+    this.noteIndex = 0;
+    this.noteTimer = 0;
+    this.radioOsc = null;
+    this.radioGain = null;
   }
 
   // Must be called from a user gesture (the Start button).
@@ -52,6 +67,16 @@ export class Sound {
     this.sirenGain.connect(this.master);
     this.sirenOsc.start();
     this.sirenTimer = 0;
+    // Radio: a triangle wave that plays the station's melody, quiet under
+    // the engine.
+    this.radioOsc = this.ctx.createOscillator();
+    this.radioOsc.type = 'triangle';
+    this.radioOsc.frequency.value = 523;
+    this.radioGain = this.ctx.createGain();
+    this.radioGain.gain.value = 0;
+    this.radioOsc.connect(this.radioGain);
+    this.radioGain.connect(this.master);
+    this.radioOsc.start();
   }
 
   // Mute or unmute everything. Returns true when sound is now muted.
@@ -65,6 +90,7 @@ export class Sound {
       this.master.gain.value = 0;
       this.engineGain.gain.value = 0;
       this.sirenGain.gain.value = 0;
+      if (this.radioGain) this.radioGain.gain.value = 0;
       if (this.ctx.state === 'running') this.ctx.suspend();
     }
     return !this.enabled;
@@ -76,7 +102,25 @@ export class Sound {
     if (this.ctx && this.enabled) this.master.gain.value = this.volume;
   }
 
-  // Called every frame: engine pitch from speed, siren while wanted.
+  // --- Radio ---
+  station() {
+    return RADIO[this.stationIndex];
+  }
+
+  song() {
+    return this.station().songs[this.songIndex];
+  }
+
+  nextStation() {
+    this.stationIndex = (this.stationIndex + 1) % RADIO.length;
+    this.songIndex = 0;
+    this.noteIndex = 0;
+    this.radioTimer = 0;
+    return this.station();
+  }
+
+  // Called every frame: engine pitch from speed, siren while wanted, and
+  // the radio melody. The song changes every 25 seconds on its own.
   update(dt, speed, wanted) {
     if (!this.ctx || !this.enabled) return;
     const target = speed > 0.5 ? 0.05 + Math.min(0.09, Math.abs(speed) * 0.002) : 0;
@@ -89,6 +133,21 @@ export class Sound {
     } else {
       this.sirenGain.gain.value = 0;
     }
+    // Radio: step through the station's melody, one note per beat.
+    const st = this.station();
+    this.radioTimer += dt;
+    if (this.radioTimer > 25) {
+      this.radioTimer = 0;
+      this.songIndex = (this.songIndex + 1) % st.songs.length;
+    }
+    this.noteTimer += dt;
+    if (this.noteTimer > 0.32) {
+      this.noteTimer = 0;
+      this.noteIndex = (this.noteIndex + 1) % st.notes.length;
+      this.radioOsc.frequency.value = st.notes[this.noteIndex];
+    }
+    const radioTarget = 0.045;
+    this.radioGain.gain.value += (radioTarget - this.radioGain.gain.value) * Math.min(1, 4 * dt);
   }
 
   // A short burst of filtered noise (a gunshot, a punch, a crash).
@@ -133,6 +192,11 @@ export class Sound {
   mission() { this.tone(523, 0.15, 0.2); setTimeout(() => this.tone(659, 0.15, 0.2), 140); setTimeout(() => this.tone(784, 0.3, 0.2), 280); }
   click() { this.tone(600, 0.06, 0.1, 'square'); }
   sirenBlip() { this.tone(950, 0.2, 0.12, 'sine'); }
+  // The car horn: two tones at once, a short honk.
+  horn() {
+    this.tone(370, 0.35, 0.18, 'square');
+    this.tone(466, 0.35, 0.14, 'square');
+  }
   // Busted sting: three descending notes when the police catch the player.
   busted() { this.tone(392, 0.25, 0.2, 'triangle'); setTimeout(() => this.tone(311, 0.25, 0.2, 'triangle'), 220); setTimeout(() => this.tone(233, 0.5, 0.2, 'triangle'), 440); }
 }

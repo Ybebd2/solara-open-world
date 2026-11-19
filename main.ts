@@ -1,12 +1,17 @@
-// SOLARA — a gta6-01 entry (Node 22, standard library only). The game is this
-// directory's game/ folder: plain static files a desktop browser loads offline
-// (game/index.html and its ES modules, three.js vendored under game/vendor/, no
-// network request). The program hands it in: it copies game/ and screenshots/
-// from beside this file to /output and writes /output/dossier.json, the summary
-// the judge reads, with the vendored make.fun library. It fails fast with a
-// clear message when the game entry point is missing, and prints a build
-// summary (dossier size, screenshot count, game file count) so a broken
-// hand-in is spotted before it is submitted.
+// SOLARA v3 — a gta6-01 entry (Node 22, standard library only). The game is
+// this directory's game/ folder: plain static files a desktop browser loads
+// offline (game/index.html and its ES modules, three.js vendored under
+// game/vendor/, no network request). The program hands it in: it copies
+// game/ and screenshots/ from beside this file to /output and writes
+// /output/dossier.json, the summary the judge reads, with the vendored
+// make.fun library. It fails fast with a clear message when the game entry
+// point is missing, and prints a build summary (dossier size, screenshot
+// count, game file count) so a broken hand-in is spotted before it is
+// submitted.
+//
+// v3: golden-hour lighting, a dense HUD, detailed cars and buildings, an
+// 8-mission chain with named characters, a police helicopter, a garage, a
+// radio, a full map, and a pre-start intro.
 //
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
@@ -22,7 +27,7 @@ const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
 const gameEntry = join(here, 'game', 'index.html');
 if (!existsSync(gameEntry)) {
-  throw new Error(`SOLARA build failed: game entry point missing at ${gameEntry}`);
+  throw new Error(`SOLARA v3 build failed: game entry point missing at ${gameEntry}`);
 }
 
 mkdirSync(out, { recursive: true });
@@ -47,4 +52,4 @@ const dossierBytes = readFileSync(join(out, 'dossier.json')).length;
 const shotCount = readdirSync(join(out, 'screenshots')).filter((f) => /\.(jpe?g|png|webp)$/i.test(f)).length;
 const countFiles = (dir) => readdirSync(dir, { withFileTypes: true }).reduce(
   (n, e) => n + (e.isDirectory() ? countFiles(join(dir, e.name)) : 1), 0);
-console.log(`SOLARA build OK: dossier ${dossierBytes} bytes, ${shotCount} screenshots, ${countFiles(join(out, 'game'))} game files -> ${out}`);
+console.log(`SOLARA v3 build OK: dossier ${dossierBytes} bytes, ${shotCount} screenshots, ${countFiles(join(out, 'game'))} game files -> ${out}`);

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="SOLARA — an original open-world crime game: steal cars, outrun the Solara Police, and run fixer Mara's six jobs across a sun-soaked coastal city.">
+<meta name="description" content="SOLARA v3 — an original open-world crime game at golden hour: steal cars, outrun the PCPD (helicopter and all), run fixer Lupe's eight jobs across a sun-soaked coastal city, tune your ride at Sully's Garage, and climb the respect ladder.">
 <title>SOLARA — an open-world crime game</title>
 <style>
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0b0e14; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -11,18 +11,43 @@
   canvas#game { display: block; width: 100%; height: 100%; }
   /* HUD */
   #hud { position: absolute; inset: 0; pointer-events: none; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
-  #minimap { position: absolute; top: 14px; right: 14px; width: 190px; height: 190px; border-radius: 50%; border: 3px solid rgba(255,255,255,.85); box-shadow: 0 2px 10px rgba(0,0,0,.5); background: #1c2733; }
-  #wanted { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); font-size: 30px; letter-spacing: 4px; color: #ffd23f; }
-  #wanted .off { color: rgba(255,255,255,.25); }
-  #cash { position: absolute; top: 220px; right: 18px; font-size: 22px; font-weight: 700; color: #7dff9a; text-align: right; }
-  #objective { position: absolute; top: 14px; left: 14px; max-width: 340px; background: rgba(0,0,0,.55); border-left: 4px solid #ffb300; padding: 10px 12px; border-radius: 6px; font-size: 15px; line-height: 1.4; }
-  #objective .title { font-weight: 700; color: #ffb300; margin-bottom: 2px; }
-  #health { position: absolute; bottom: 18px; left: 14px; width: 240px; }
+  #minimap { position: absolute; bottom: 18px; left: 14px; width: 190px; height: 190px; border-radius: 50%; border: 3px solid rgba(255,255,255,.85); box-shadow: 0 2px 10px rgba(0,0,0,.5); background: #1c2733; }
+  #district { position: absolute; bottom: 214px; left: 16px; font-size: 16px; font-weight: 700; color: #ffe9b0; letter-spacing: 1px; }
+  #respect { position: absolute; bottom: 240px; left: 16px; width: 190px; }
+  #respect .bar { height: 8px; background: rgba(0,0,0,.6); border-radius: 4px; overflow: hidden; border: 1px solid rgba(255,255,255,.5); }
+  #respect .fill { height: 100%; width: 0%; background: linear-gradient(90deg, #ff9e57, #ffd23f); }
+  #respect .label { font-size: 12px; margin-top: 3px; color: #ffe9b0; }
+  #wanted { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-size: 34px; letter-spacing: 5px; color: #ffd23f; text-shadow: 0 0 12px rgba(255,210,63,.8), 0 1px 3px rgba(0,0,0,.8); }
+  #wanted .off { color: rgba(255,255,255,.25); text-shadow: none; }
+  #cash { position: absolute; top: 14px; right: 18px; font-size: 30px; font-weight: 800; color: #7dff9a; text-align: right; text-shadow: 0 0 10px rgba(125,255,154,.5), 0 1px 3px rgba(0,0,0,.8); }
+  #clock { position: absolute; top: 50px; right: 18px; font-size: 15px; font-weight: 700; color: #ffe9b0; text-align: right; }
+  #weaponBar { position: absolute; top: 76px; right: 18px; display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+  #weaponBar .slot { font-size: 12px; font-weight: 700; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.35); border-radius: 5px; padding: 3px 8px; color: #e8eef5; }
+  #weaponBar .slot.active { border-color: #ffd23f; color: #ffd23f; box-shadow: 0 0 8px rgba(255,210,63,.5); }
+  #weaponBar .slot.locked { color: rgba(255,255,255,.45); }
+  #pcpd { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); width: 280px; background: rgba(10,10,26,.72); border: 1px solid rgba(255,80,80,.6); border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+  #pcpd .pcpdTitle { font-weight: 800; color: #ff8a8a; letter-spacing: 1px; display: flex; justify-content: space-between; }
+  #pcpd .unit { display: flex; justify-content: space-between; margin-top: 3px; }
+  #pcpd .unit b { color: #fff; }
+  #pcpd .unit span { color: #ffd23f; }
+  #pcpd .unit i { font-style: normal; color: #ff8a8a; }
+  #pcpd .unit.heli i { color: #7fd1ff; }
+  #pcpd .pcpdFoot { margin-top: 5px; font-size: 11px; color: #ffb3b3; letter-spacing: 1px; text-align: center; }
+  #objective { position: absolute; top: 14px; left: 14px; max-width: 360px; background: rgba(0,0,0,.6); border-left: 4px solid #ffb300; padding: 10px 12px; border-radius: 6px; font-size: 15px; line-height: 1.4; }
+  #objective .title { font-weight: 800; color: #ffb300; margin-bottom: 2px; font-size: 16px; }
+  #objective .next { font-size: 12px; color: #cfe8ff; margin-top: 4px; }
+  #health { position: absolute; bottom: 264px; left: 16px; width: 190px; }
   #health .bar { height: 14px; background: rgba(0,0,0,.6); border-radius: 7px; overflow: hidden; border: 1px solid rgba(255,255,255,.5); }
   #health .fill { height: 100%; width: 100%; background: linear-gradient(90deg, #37d67a, #7dff9a); }
   #health .label { font-size: 13px; margin-top: 4px; }
   #ammo { position: absolute; bottom: 18px; right: 18px; font-size: 20px; font-weight: 700; text-align: right; }
-  #speed { position: absolute; bottom: 64px; right: 18px; font-size: 15px; text-align: right; color: #cfe8ff; }
+  #speed { position: absolute; bottom: 64px; right: 18px; font-size: 16px; text-align: right; color: #cfe8ff; font-weight: 700; }
+  #carInfo { position: absolute; bottom: 92px; right: 18px; font-size: 15px; text-align: right; color: #ffe9b0; font-weight: 700; }
+  #radio { position: absolute; bottom: 122px; right: 18px; font-size: 13px; text-align: right; color: #e8eef5; background: rgba(0,0,0,.45); padding: 4px 10px; border-radius: 12px; }
+  #radio b { color: #ff5a8a; }
+  #dialogue { position: absolute; bottom: 150px; left: 50%; transform: translateX(-50%); max-width: 640px; background: rgba(10,10,26,.78); border: 1px solid rgba(255,179,0,.6); border-radius: 10px; padding: 10px 16px; font-size: 15px; line-height: 1.45; }
+  #dialogue b { color: #ffb300; margin-right: 8px; }
+  #prompt { position: absolute; top: 58%; left: 50%; transform: translateX(-50%); font-size: 18px; font-weight: 700; background: rgba(0,0,0,.65); border: 1px solid #ffd23f; padding: 8px 18px; border-radius: 20px; color: #ffd23f; white-space: nowrap; }
   #toast { position: absolute; bottom: 110px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.65); padding: 8px 16px; border-radius: 20px; font-size: 15px; opacity: 0; transition: opacity .3s; white-space: nowrap; }
   #hint { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); font-size: 13px; color: rgba(255,255,255,.85); background: rgba(0,0,0,.45); padding: 6px 12px; border-radius: 14px; white-space: nowrap; }
   /* Screens */
@@ -30,7 +55,7 @@
   .screen h1 { font-size: 64px; margin: 0 0 6px; letter-spacing: 6px; color: #ffb300; text-shadow: 0 4px 24px rgba(255,179,0,.45); }
   .screen h2 { font-size: 20px; font-weight: 400; margin: 0 0 18px; color: #ffe9b0; }
   .screen p { max-width: 560px; line-height: 1.55; font-size: 15px; color: #e8eef5; margin: 6px 0; }
-  .screen .keys { font-size: 14px; color: #cfe8ff; background: rgba(0,0,0,.45); border-radius: 8px; padding: 10px 16px; margin: 14px 0; line-height: 1.8; }
+  .screen .keys { font-size: 14px; color: #cfe8ff; background: rgba(0,0,0,.45); border-radius: 8px; padding: 10px 16px; margin: 14px 0; line-height: 1.8; text-align: left; }
   .screen button { pointer-events: auto; cursor: pointer; font-size: 19px; font-weight: 700; color: #1a1200; background: #ffb300; border: none; border-radius: 10px; padding: 13px 34px; margin-top: 10px; box-shadow: 0 4px 18px rgba(255,179,0,.4); }
   .screen button:hover { background: #ffc63d; }
   .screen button.secondary { background: rgba(255,255,255,.16); color: #fff; box-shadow: none; font-size: 15px; padding: 9px 22px; }
@@ -40,6 +65,30 @@
   .joblist { list-style: none; margin: 4px 0 0; padding: 0; font-size: 14px; color: #e8eef5; text-align: left; line-height: 1.7; }
   .joblist li b { color: #ffb300; }
   .joblist li span { float: right; color: #7dff9a; font-weight: 700; margin-left: 24px; }
+  /* Map overlay */
+  #mapScreen { flex-direction: row; gap: 24px; padding: 20px; }
+  #mapScreen .mapCol { display: flex; flex-direction: column; align-items: center; }
+  #mapScreen h1 { font-size: 34px; letter-spacing: 4px; }
+  #fullMap { border: 2px solid rgba(255,255,255,.5); border-radius: 10px; background: #141a24; }
+  #mapSide { width: 320px; text-align: left; }
+  #mapMissions .mapJob { display: flex; justify-content: space-between; font-size: 14px; padding: 5px 8px; border-radius: 5px; margin: 2px 0; background: rgba(255,255,255,.06); }
+  #mapMissions .mapJob.current { background: rgba(255,179,0,.25); border-left: 3px solid #ffb300; }
+  #mapMissions .mapJob.done { color: #7dff9a; }
+  #mapMissions .mapJob span { color: #7dff9a; font-weight: 700; }
+  #mapStats { margin-top: 12px; font-size: 14px; }
+  #mapStats div { display: flex; justify-content: space-between; padding: 3px 8px; }
+  #mapStats b { color: #cfe8ff; }
+  #mapStats span { color: #fff; font-weight: 700; }
+  #mapLegend { margin-top: 12px; font-size: 13px; color: #cfe8ff; line-height: 1.8; }
+  .mapBtns { display: flex; flex-direction: column; gap: 4px; }
+  .mapBtns button { font-size: 15px; padding: 9px 22px; }
+  /* Garage */
+  #garageUpgrades { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+  .upgrade { display: flex; justify-content: space-between; align-items: center; gap: 20px; background: rgba(255,255,255,.08); border-radius: 8px; padding: 10px 16px; font-size: 15px; }
+  .upgrade b { color: #ffb300; }
+  .upgrade span { color: #7dff9a; font-weight: 700; }
+  .upgrade button { font-size: 14px; padding: 7px 18px; margin-top: 0; }
+  .upgrade button:disabled { background: rgba(255,255,255,.2); color: rgba(255,255,255,.5); box-shadow: none; cursor: default; }
 </style>
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.min.js" } }
@@ -50,35 +99,89 @@
   <canvas id="game"></canvas>
   <div id="hud" class="hidden">
     <canvas id="minimap" width="380" height="380" role="img" aria-label="Minimap of Solara: player, traffic, police and mission marker"></canvas>
-    <div id="wanted"><span class="off">★</span><span class="off">★</span><span class="off">★</span><span class="off">★</span><span class="off">★</span></div>
-    <div id="objective"><div class="title">SOLARA</div><div id="objectiveText">Meet Mara at the pier.</div></div>
-    <div id="cash">$0</div>
+    <div id="district">The Beach</div>
+    <div id="respect"><div class="bar"><div class="fill" id="respectFill"></div></div><div class="label" id="respectLabel">Respect 0</div></div>
     <div id="health"><div class="bar"><div class="fill" id="healthFill"></div></div><div class="label" id="healthLabel">Health 100</div></div>
+    <div id="wanted"><span class="off">★</span><span class="off">★</span><span class="off">★</span><span class="off">★</span><span class="off">★</span></div>
+    <div id="cash">$0</div>
+    <div id="clock">17:30</div>
+    <div id="weaponBar"></div>
+    <div id="pcpd" class="hidden">
+      <div class="pcpdTitle"><span>PCPD RESPONSE</span><span id="pcpdEvade">EVADING 0%</span></div>
+      <div id="pcpdUnits"></div>
+      <div class="pcpdFoot">SEARCH GRID ACTIVE — STAY OUT OF SIGHT</div>
+    </div>
+    <div id="objective"><div class="title" id="objectiveTitle">JOB 1/8 — Meet Lupe</div><div id="objectiveText">Lupe is waiting on the pier.</div><div class="next" id="objectiveNext">NEXT: Borrow a Car</div></div>
+    <div id="carInfo"></div>
     <div id="speed"></div>
+    <div id="radio"></div>
     <div id="ammo"></div>
+    <div id="dialogue" class="hidden"><b id="dialogueSpeaker">Lupe</b><span id="dialogueText"></span></div>
+    <div id="prompt" class="hidden"></div>
     <div id="toast"></div>
-    <div id="hint">WASD move &nbsp;·&nbsp; Shift run &nbsp;·&nbsp; E enter car &nbsp;·&nbsp; F punch &nbsp;·&nbsp; Click shoot &nbsp;·&nbsp; M mission</div>
+    <div id="hint">WASD move &nbsp;·&nbsp; F carjack &nbsp;·&nbsp; Click shoot &nbsp;·&nbsp; Q weapon &nbsp;·&nbsp; R radio &nbsp;·&nbsp; M map</div>
   </div>
   <div id="startScreen" class="screen">
     <h1>SOLARA</h1>
     <h2>A sun-soaked city. Your rules.</h2>
-    <p>You are Kai Mercer, fresh out of the county lockup and back in Solara — a coastal city of palms, chrome and bad decisions. Mara, the fixer who got you out, has work. Steal cars, outrun the Solara Police, run her jobs, and buy your way to the top of the city.</p>
-    <ul class="joblist" aria-label="Mara's jobs">
-      <li><b>1. Meet Mara</b> — the pier<span>$200</span></li>
+    <p>You are Kai Mercer, fresh out of the county lockup and back in Solara — a coastal city of palms, chrome and bad decisions. Lupe, the fixer who got you out, has work. Steal cars, outrun the Solara Police, run her eight jobs, tune your ride at Sully's Garage, and buy your way to the top of the city.</p>
+    <ul class="joblist" aria-label="Lupe's jobs">
+      <li><b>1. Meet Lupe</b> — the pier<span>$200</span></li>
       <li><b>2. Borrow a Car</b> — steal wheels, bring them downtown<span>$400</span></li>
       <li><b>3. Lose the Heat</b> — shake the police<span>$500</span></li>
       <li><b>4. The Delivery</b> — north gate in 90 seconds<span>$800</span></li>
       <li><b>5. The Getaway</b> — reach the beach and lose them there<span>$1,200</span></li>
-      <li><b>6. King of Solara</b> — three drops, then back to Mara<span>$2,000</span></li>
+      <li><b>6. Neon Row Run</b> — three drops in the neon<span>$1,500</span></li>
+      <li><b>7. The Old Port Job</b> — crates, then the safehouse<span>$1,800</span></li>
+      <li><b>8. King of Solara</b> — three drops, then back to Lupe<span>$2,500</span></li>
     </ul>
-    <div class="keys">WASD — move / drive &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — run &nbsp;·&nbsp; Space — jump<br>E — enter / steal a car &nbsp;·&nbsp; F — punch &nbsp;·&nbsp; Click — shoot &nbsp;·&nbsp; P — pause &nbsp;·&nbsp; M — mission list</div>
-    <button id="playBtn">Start the game</button>
+    <div class="keys">WASD — move / drive &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — run &nbsp;·&nbsp; Space — jump / handbrake<br>F — carjack / punch &nbsp;·&nbsp; E — enter car / shop &nbsp;·&nbsp; Click — shoot &nbsp;·&nbsp; Right-click — aim<br>Q — cycle weapon &nbsp;·&nbsp; 1-5 — weapon slots &nbsp;·&nbsp; R — radio &nbsp;·&nbsp; H — horn &nbsp;·&nbsp; M — map &nbsp;·&nbsp; P — pause</div>
+    <button id="playBtn">NEW GAME</button>
+    <button id="controlsBtn" class="secondary">CONTROLS</button>
     <button id="continueBtn" class="secondary hidden">Continue saved game</button>
     <p style="font-size:13px;color:#9fb4c8">Best with keyboard and mouse. Your progress saves in this browser.</p>
   </div>
+  <div id="controlsScreen" class="screen hidden">
+    <h1 style="font-size:44px">CONTROLS</h1>
+    <div class="keys">
+      WASD — move on foot / drive<br>
+      Mouse — look around (click to lock the pointer)<br>
+      Shift — sprint &nbsp;·&nbsp; Space — jump (on foot) / handbrake (driving)<br>
+      F — carjack a nearby car / punch<br>
+      E — enter a car / use a shop or the garage<br>
+      Click — shoot &nbsp;·&nbsp; Right-click — aim<br>
+      Q — cycle weapon &nbsp;·&nbsp; 1-5 — select a weapon slot (3-5 cost cash to unlock)<br>
+      R — switch radio station &nbsp;·&nbsp; H — horn<br>
+      M — map (districts, route, missions, stats) &nbsp;·&nbsp; P — pause
+    </div>
+    <button id="controlsCloseBtn">CLOSE</button>
+  </div>
+  <div id="mapScreen" class="screen hidden">
+    <div class="mapCol">
+      <h1>MAP OF SOLARA</h1>
+      <canvas id="fullMap" width="700" height="500"></canvas>
+    </div>
+    <div id="mapSide">
+      <div id="mapMissions"></div>
+      <div id="mapStats"></div>
+      <div id="mapLegend">G — Sully's Garage (upgrades)<br>A — Arms Shop (weapons)<br>H — Safehouse<br>R — Race Start<br>! — Objective (yellow route line)</div>
+      <div class="mapBtns">
+        <button id="mapResumeBtn">RESUME</button>
+        <button id="mapSaveBtn" class="secondary">SAVE GAME</button>
+        <button id="mapLoadBtn" class="secondary">LOAD GAME</button>
+        <button id="mapQuitBtn" class="secondary">QUIT TO TITLE</button>
+      </div>
+    </div>
+  </div>
+  <div id="garageScreen" class="screen hidden">
+    <h1 style="font-size:44px">SULLY'S GARAGE</h1>
+    <p id="garageCar">Your ride, tuned right.</p>
+    <div id="garageUpgrades"></div>
+    <button id="garageLeaveBtn">LEAVE</button>
+  </div>
   <div id="pauseScreen" class="screen hidden">
     <h1 style="font-size:44px">PAUSED</h1>
-    <p id="pauseStats">Cash $0 · Missions 0/6</p>
+    <p id="pauseStats">Cash $0 · Missions 0/8</p>
     <button id="resumeBtn">Resume</button>
     <button id="restartBtn" class="secondary">Restart from save</button>
   </div>
