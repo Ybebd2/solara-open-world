@@ -1,6 +1,9 @@
-// SOLARA — the HUD: mission panel, money/clock/stars, PCPD response,
-// weapon bar, circular minimap, dialogue portraits, toasts, overlays.
-import { WEAPONS, RANKS, RADIO, fmtMoney, fmtClock, clamp } from './config.js';
+// HUD — the dense GTA overlay. Mission panel top-left, money/clock/gold
+// stars top-right, PCPD response panel top-centre with named units and
+// live distances, weapon slots bottom-right, circular minimap + district
+// bottom-left, portrait dialogue bottom-centre, radio + car readout, a
+// red ring-dot crosshair, and toasts. All DOM, updated every frame.
+import { WEAPONS, RADIO, RANKS } from './config.js';
 
 function el(tag, cls, parent) {
   const e = document.createElement(tag);
@@ -9,354 +12,332 @@ function el(tag, cls, parent) {
   return e;
 }
 
-function drawPortrait(canvas, who) {
-  const g = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  g.clearRect(0, 0, W, H);
-  // Backdrop.
-  g.fillStyle = who === 'lupe' ? '#ff5fa2' : who === 'kai' ? '#2a9d8f' : '#3a4a6b';
-  g.fillRect(0, 0, W, H);
-  // Face.
-  g.fillStyle = '#c98a5e';
-  g.beginPath(); g.arc(W / 2, H * 0.52, W * 0.3, 0, Math.PI * 2); g.fill();
-  // Hair.
-  g.fillStyle = who === 'lupe' ? '#1c1218' : who === 'kai' ? '#14100c' : '#8a8a8a';
-  g.beginPath(); g.arc(W / 2, H * 0.42, W * 0.31, Math.PI, 0); g.fill();
-  g.fillRect(W * 0.19, H * 0.36, W * 0.1, H * 0.3);
-  g.fillRect(W * 0.71, H * 0.36, W * 0.1, H * 0.3);
-  if (who === 'lupe') {
-    g.fillStyle = '#ff5fa2';
-    g.fillRect(W * 0.62, H * 0.2, W * 0.08, H * 0.42);
-  }
-  // Eyes.
-  g.fillStyle = '#14100c';
-  g.beginPath(); g.arc(W * 0.4, H * 0.52, W * 0.035, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.arc(W * 0.6, H * 0.52, W * 0.035, 0, Math.PI * 2); g.fill();
-  // Smile.
-  g.strokeStyle = '#7a3a2a';
-  g.lineWidth = 2;
-  g.beginPath(); g.arc(W / 2, H * 0.6, W * 0.1, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke();
-  // Shoulders.
-  g.fillStyle = who === 'lupe' ? '#e8b4d0' : who === 'kai' ? '#2a9d8f' : '#4a5a7a';
-  g.beginPath(); g.arc(W / 2, H * 1.05, W * 0.42, Math.PI, 0); g.fill();
-}
-
 export class HUD {
-  constructor(game) {
-    this.game = game;
-    this.root = document.getElementById('hud');
-    this._toasts = [];
-    this._build();
+  constructor(root) {
+    this.root = root;
+    this.dialogue = { name: 'Lupe', role: 'FIXER · PIER SHACK', text: '', reply: '' };
+    this.toastText = '';
+    this.toastUntil = 0;
+    this.build();
   }
 
-  _build() {
+  build() {
     const r = this.root;
-    // Mission panel, top-left.
-    this.missionPanel = el('div', 'panel mission', r);
-    this.missionChapter = el('div', 'mission-chapter', this.missionPanel);
-    this.missionTitle = el('div', 'mission-title', this.missionPanel);
-    this.missionStage = el('div', 'mission-stage', this.missionPanel);
-    this.stageBar = el('div', 'stage-bar', this.missionPanel);
-    for (let i = 0; i < 4; i++) el('div', 'stage-seg', this.stageBar);
-    this.missionNext = el('div', 'mission-next', this.missionPanel);
-    this.missionTimer = el('div', 'mission-timer', this.missionPanel);
+    const css = document.createElement('style');
+    css.textContent = `
+      #hud{position:fixed;inset:0;pointer-events:none;font-family:Arial,Helvetica,sans-serif;color:#fff;z-index:5}
+      .panel{background:rgba(10,10,18,.72);border-radius:10px;padding:10px 12px;backdrop-filter:blur(2px)}
+      #mission{position:absolute;top:14px;left:14px;width:23%;min-width:280px}
+      #mission .ch{color:#f2c14e;font-weight:700;font-size:13px;letter-spacing:1px}
+      #mission .title{font-size:19px;font-weight:800;margin:2px 0}
+      #mission .stage{color:#cfd6dd;font-size:12px}
+      #mission .bar{display:flex;gap:4px;margin:6px 0}
+      #mission .bar i{flex:1;height:6px;background:#3a4356;border-radius:3px}
+      #mission .bar i.on{background:#f2a71b}
+      #mission .next{font-size:12.5px;color:#e8ecf1;line-height:1.35}
+      #topright{position:absolute;top:14px;right:14px;text-align:right}
+      #money{color:#7dff9e;font-size:26px;font-weight:800;text-shadow:0 2px 6px #000}
+      #clock{font-size:15px;color:#e8ecf1}
+      #stars{font-size:30px;letter-spacing:2px;line-height:1.1}
+      #stars .on{color:#ffd700;text-shadow:0 0 8px #ffbf00}
+      #stars .off{color:#4a5568}
+      #clean{font-size:11px;color:#9fb3c8}
+      #pcpd{position:absolute;top:14px;left:50%;transform:translateX(-50%);min-width:330px;text-align:left}
+      #pcpd .head{font-weight:800;font-size:13px;letter-spacing:.5px}
+      #pcpd .unit{display:flex;justify-content:space-between;font-size:12.5px;padding:1px 0}
+      #pcpd .unit .st{color:#9fb3c8}
+      #pcpd .unit .pursuit{color:#ff9a3d;font-weight:700}
+      #pcpd .unit .wrecked{color:#8a97a5;text-decoration:line-through}
+      #pcpd .air{color:#ffd700;font-weight:700;font-size:12.5px}
+      #badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:12px;font-weight:800;margin-top:4px}
+      #badge.sight{background:#e63946}
+      #badge.hidden{background:#2a6ea5}
+      #evade{font-size:12px;color:#9fb3c8}
+      #weapons{position:absolute;right:14px;bottom:14px;display:flex;gap:6px}
+      #weapons .slot{background:rgba(10,10,18,.72);border-radius:8px;padding:7px 10px;text-align:center;min-width:64px}
+      #weapons .slot.sel{outline:2px solid #f2a71b;background:rgba(60,40,5,.8)}
+      #weapons .slot .num{font-size:10px;color:#9fb3c8}
+      #weapons .slot .nm{font-size:13px;font-weight:800}
+      #weapons .slot .am{font-size:12px;color:#ffd700}
+      #weapons .slot.locked{opacity:.55}
+      #carhud{position:absolute;right:14px;bottom:96px;text-align:right}
+      #carhud .nm{font-size:16px;font-weight:800}
+      #carhud .cond{font-size:12px;color:#cfd6dd}
+      #carhud .condbar{width:150px;height:7px;background:#3a4356;border-radius:4px;margin:3px 0 3px auto}
+      #carhud .condbar i{display:block;height:100%;background:#37d67a;border-radius:4px}
+      #carhud .spd{font-size:15px;font-weight:700}
+      #carhud .radio{font-size:12px;color:#ffd98a}
+      #minimap{position:absolute;left:14px;bottom:14px}
+      #minimap canvas{border-radius:50%;border:3px solid rgba(255,255,255,.75);background:#0e1a2a}
+      #minimap .dist{font-size:12.5px;font-weight:700;margin-top:4px;text-shadow:0 1px 4px #000}
+      #minimap .resp{font-size:11.5px;color:#cfd6dd;text-shadow:0 1px 4px #000}
+      #dialogue{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);width:560px;max-width:46vw}
+      #dialogue .row{display:flex;gap:10px;align-items:flex-start}
+      #portrait{width:92px;height:92px;min-width:92px;border-radius:10px;border:3px solid #ff4fa3;background:linear-gradient(160deg,#ffb3d1,#7a2a5a);display:flex;align-items:center;justify-content:center;font-size:44px}
+      #dialogue .who{color:#ff8fc0;font-weight:800;font-size:13px}
+      #dialogue .txt{font-size:14px;line-height:1.4;margin:2px 0}
+      #dialogue .rep{font-size:13px;color:#bfe3ff;font-style:italic}
+      #toast{position:absolute;top:110px;right:14px;background:rgba(10,10,18,.85);border-radius:8px;padding:8px 12px;font-weight:800;font-size:15px}
+      #cross{position:absolute;left:50%;top:50%;width:16px;height:16px;transform:translate(-50%,-50%)}
+      #cross::before{content:'';position:absolute;left:50%;top:50%;width:14px;height:14px;border:2px solid #ff3b30;border-radius:50%;transform:translate(-50%,-50%)}
+      #cross::after{content:'';position:absolute;left:50%;top:50%;width:4px;height:4px;background:#ff3b30;border-radius:50%;transform:translate(-50%,-50%)}
+      #overlay{position:fixed;inset:0;background:rgba(8,8,16,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;text-align:center}
+      #overlay h1{font-size:64px;letter-spacing:6px;margin:0;color:#ffd98a}
+      #overlay p{font-size:16px;color:#cfd6dd;max-width:520px;line-height:1.5}
+      #overlay .hint{margin-top:18px;font-size:13px;color:#9fb3c8}
+    `;
+    document.head.appendChild(css);
+    const hud = el('div', '', r);
+    hud.id = 'hud';
 
-    // Top-right: money, clock, stars.
-    this.topRight = el('div', 'top-right', r);
-    this.moneyEl = el('div', 'money', this.topRight);
-    this.clockEl = el('div', 'clock', this.topRight);
-    this.starsEl = el('div', 'stars', this.topRight);
-    for (let i = 0; i < 5; i++) {
-      const s = el('span', 'star', this.starsEl);
-      s.textContent = '★';
-    }
-    this.sightBadge = el('div', 'sight-badge', this.topRight);
-    this.evadeEl = el('div', 'evade', this.topRight);
-
-    // PCPD response panel, top-centre.
-    this.pcpd = el('div', 'panel pcpd', r);
-    this.pcpdTitle = el('div', 'pcpd-title', this.pcpd);
-    this.pcpdRows = el('div', 'pcpd-rows', this.pcpd);
-    this.pcpdAir = el('div', 'pcpd-air', this.pcpd);
-
-    // Minimap + district, bottom-left.
-    this.mapWrap = el('div', 'map-wrap', r);
-    this.minimap = el('canvas', 'minimap', this.mapWrap);
-    this.minimap.width = 190; this.minimap.height = 190;
-    this.districtEl = el('div', 'district', this.mapWrap);
-    this.respectEl = el('div', 'respect', this.mapWrap);
-
-    // Weapon bar + car, bottom-right.
-    this.bottomRight = el('div', 'bottom-right', r);
-    this.weaponBar = el('div', 'weapon-bar', this.bottomRight);
-    this.slots = [];
-    for (let i = 0; i < 5; i++) {
-      const s = el('div', 'slot', this.weaponBar);
-      el('div', 'slot-key', s).textContent = String(i + 1);
-      const nm = el('div', 'slot-name', s);
-      const am = el('div', 'slot-ammo', s);
-      this.slots.push({ el: s, nm, am });
-    }
-    this.carEl = el('div', 'car-info', this.bottomRight);
-    this.carName = el('div', 'car-name', this.carEl);
-    this.carCond = el('div', 'car-cond', this.carEl);
-    this.carSpeed = el('div', 'car-speed', this.carEl);
-    this.radioEl = el('div', 'radio', this.bottomRight);
-
-    // Crosshair.
-    this.crosshair = el('div', 'crosshair', r);
-    el('div', 'cross-dot', this.crosshair);
-
-    // Dialogue, bottom-centre.
-    this.dialogue = el('div', 'dialogue', r);
-    this.dlgPortrait = el('canvas', 'portrait', this.dialogue);
-    this.dlgPortrait.width = 96; this.dlgPortrait.height = 96;
-    const dlgBody = el('div', 'dlg-body', this.dialogue);
-    this.dlgName = el('div', 'dlg-name', dlgBody);
-    this.dlgText = el('div', 'dlg-text', dlgBody);
-    this.dlgReply = el('div', 'dlg-reply', dlgBody);
-
-    // Toasts.
-    this.toastWrap = el('div', 'toasts', r);
-
-    // Overlays.
-    this.intro = el('div', 'overlay intro', r);
-    el('div', 'game-title', this.intro).textContent = 'SOLARA';
-    el('div', 'game-sub', this.intro).textContent = 'AN OPEN-WORLD CRIME STORY';
-    el('div', 'game-hint', this.intro).textContent = 'Press ENTER to begin';
-    this.title = el('div', 'overlay title', r);
-    el('div', 'game-title', this.title).textContent = 'SOLARA';
-    const menu = el('div', 'title-menu', this.title);
-    for (const t of ['NEW GAME', 'CONTINUE', 'CONTROLS']) el('div', 'menu-item', menu).textContent = t;
-    el('div', 'game-hint', this.title).textContent = 'Press ENTER to play';
-    this.pauseOv = el('div', 'overlay pause', r);
-    el('div', 'game-title', this.pauseOv).textContent = 'PAUSED';
-    el('div', 'game-hint', this.pauseOv).textContent = 'P to resume · M map · F8 save · F9 load';
-    this.wastedOv = el('div', 'overlay wasted', r);
-    el('div', 'wasted-big', this.wastedOv).textContent = 'WASTED';
-    this.wastedSub = el('div', 'game-hint', this.wastedOv);
-    this.mapOv = el('div', 'overlay map', r);
-    this.mapCanvas = el('canvas', 'big-map', this.mapOv);
-    this.mapCanvas.width = 640; this.mapCanvas.height = 640;
-    this.mapHint = el('div', 'game-hint', this.mapOv);
-    this.mapHint.textContent = 'Wheel to zoom · drag to pan · click to set waypoint · M to close';
-    this.garageOv = el('div', 'overlay garage', r);
-    el('div', 'game-title', this.garageOv).textContent = "SULLY'S GARAGE";
-    this.garageList = el('div', 'garage-list', this.garageOv);
-    el('div', 'game-hint', this.garageOv).textContent = 'Press 1-3 to buy · G to close';
-  }
-
-  toast(text, sub = '') {
-    const t = el('div', 'toast', this.toastWrap);
-    t.innerHTML = `<b>${text}</b>${sub ? `<span>${sub}</span>` : ''}`;
-    this._toasts.push(t);
-    setTimeout(() => { t.remove(); }, 4200);
-    while (this._toasts.length > 3) this._toasts.shift().remove();
-  }
-
-  showDialogue(who, name, role, text, reply = '') {
-    drawPortrait(this.dlgPortrait, who);
-    this.dlgName.textContent = `${name} · ${role}`;
-    this.dlgText.textContent = text;
-    this.dlgReply.textContent = reply ? `Kai: “${reply}”` : '';
-    this.dialogue.classList.add('show');
-    clearTimeout(this._dlgTimer);
-    this._dlgTimer = setTimeout(() => this.dialogue.classList.remove('show'), 7000);
-  }
-
-  showOverlay(which) {
-    for (const o of [this.intro, this.title, this.pauseOv, this.wastedOv, this.mapOv, this.garageOv]) {
-      o.classList.remove('show');
-    }
-    if (which) which.classList.add('show');
-  }
-
-  update() {
-    const g = this.game;
     // Mission panel.
-    const m = g.missions;
-    if (m.done) {
-      this.missionChapter.textContent = 'ALL JOBS DONE';
-      this.missionTitle.textContent = 'GOLDEN HOUR COMPLETE';
-      this.missionStage.textContent = '8 / 8';
-      this.missionNext.textContent = 'Solara is yours, Kai.';
-      this.missionTimer.textContent = '';
-    } else if (m.current) {
-      const job = m.current;
-      this.missionChapter.textContent = `${job.chapter} · ${job.title}`;
-      this.missionTitle.textContent = job.stages[m.stage] ? job.stages[m.stage].text : job.brief;
-      this.missionStage.textContent = `STAGE ${m.stage + 1}/${job.stages.length}`;
-      const segs = this.stageBar.children;
-      for (let i = 0; i < segs.length; i++) {
-        segs[i].classList.toggle('filled', i <= m.stage);
-      }
-      this.missionNext.textContent = `NEXT: ${job.giver} — ${job.brief}`;
-      this.missionTimer.textContent = job.timed ? `⏱ ${Math.max(0, Math.ceil(m.timer))}s` : '';
-    }
-    // Top-right.
-    this.moneyEl.textContent = fmtMoney(g.money);
-    this.clockEl.textContent = fmtClock(g.hours);
-    const stars = this.starsEl.children;
-    for (let i = 0; i < 5; i++) stars[i].classList.toggle('lit', i < g.wanted.stars);
-    if (g.wanted.stars > 0) {
-      this.sightBadge.textContent = g.wanted.inSight ? 'IN SIGHT' : 'HIDDEN';
-      this.sightBadge.className = 'sight-badge ' + (g.wanted.inSight ? 'sight' : 'hidden');
-      this.evadeEl.textContent = `EVADING ${Math.round(g.wanted.evading)}%`;
-      this.evadeEl.style.display = 'block';
-    } else {
-      this.sightBadge.textContent = 'CLEAN';
-      this.sightBadge.className = 'sight-badge clean';
-      this.evadeEl.style.display = 'none';
-    }
+    const m = el('div', 'panel', hud); m.id = 'mission';
+    this.mCh = el('div', 'ch', m);
+    this.mTitle = el('div', 'title', m);
+    this.mStage = el('div', 'stage', m);
+    this.mBar = el('div', 'bar', m);
+    for (let i = 0; i < 4; i++) el('i', '', this.mBar);
+    this.mNext = el('div', 'next', m);
+
+    // Money / clock / stars.
+    const tr = el('div', '', hud); tr.id = 'topright';
+    this.moneyEl = el('div', '', tr); this.moneyEl.id = 'money';
+    this.clockEl = el('div', '', tr); this.clockEl.id = 'clock';
+    this.starsEl = el('div', '', tr); this.starsEl.id = 'stars';
+    this.cleanEl = el('div', '', tr); this.cleanEl.id = 'clean';
+
     // PCPD panel.
-    const units = g.police.cruisers.map((c) => ({ name: c.unit || 'PCPD', d: Math.round(Math.hypot(c.x - g.player.x, c.z - g.player.z)), status: c.status || 'SEARCHING' }))
-      .concat(g.police.officers.map((o) => ({ name: o.name, d: Math.round(Math.hypot(o.x - g.player.x, o.z - g.player.z)), status: o.status || 'PURSUIT' })));
-    const wrecked = units.filter((u) => u.status === 'WRECKED').length;
-    this.pcpdTitle.textContent = g.wanted.stars > 0
-      ? `PCPD RESPONSE — ${units.length} UNITS · CODE ${g.wanted.code}`
-      : 'PCPD RESPONSE — NO HEAT';
-    this.pcpdRows.innerHTML = units.slice(0, 5).map((u) =>
-      `<div class="pcpd-row"><span>${u.name}</span><span>${u.d} m</span><span class="st-${u.status}">${u.status}</span></div>`).join('')
-      + (wrecked ? `<div class="pcpd-note">${wrecked} wrecked · search grid active</div>` : '');
-    this.pcpdAir.textContent = g.police.heli ? '✦ AIR UNIT DEPLOYED' : '';
-    this.pcpd.style.display = g.wanted.stars > 0 || g.police.heli ? 'block' : 'none';
-    // Weapon bar.
-    const unlocked = m.index;
-    WEAPONS.forEach((w, i) => {
-      const s = this.slots[i];
-      const locked = unlocked < w.unlock;
-      s.el.classList.toggle('selected', g.player.weapon === w.id);
-      s.el.classList.toggle('locked', locked);
-      s.nm.textContent = locked ? 'LOCKED' : w.name;
-      s.am.textContent = locked ? '' : (w.ammo === Infinity ? '∞' : (g.player.weapon === w.id ? (g.player.weaponAmmo === Infinity ? '∞' : g.player.weaponAmmo) : w.ammo));
-    });
-    // Car + radio.
-    if (g.player.car) {
-      const c = g.player.car;
-      this.carName.textContent = c.name.toUpperCase();
-      this.carCond.innerHTML = `CONDITION <div class="cond-bar"><div style="width:${clamp(c.condition, 0, 100)}%"></div></div> ${Math.round(c.condition)}%`;
-      this.carSpeed.textContent = `${Math.round(Math.abs(c.speed) * 3.6)} km/h`;
-      const gear = Math.abs(c.speed) < 1 ? 'N' : 'G' + clamp(1 + Math.floor(Math.abs(c.speed) / 10), 1, 5);
-      this.carSpeed.textContent += ` · ${gear}`;
-      this.carEl.style.display = 'block';
-    } else {
-      this.carEl.style.display = 'none';
+    const p = el('div', 'panel', hud); p.id = 'pcpd';
+    this.pHead = el('div', 'head', p);
+    this.pUnits = el('div', '', p);
+    this.pAir = el('div', 'air', p);
+    this.pBadge = el('div', '', p); this.pBadge.id = 'badge';
+    this.pEvade = el('div', '', p); this.pEvade.id = 'evade';
+
+    // Weapon slots.
+    const w = el('div', '', hud); w.id = 'weapons';
+    this.slotEls = [];
+    for (const wp of WEAPONS) {
+      const s = el('div', 'slot' + (wp.locked ? ' locked' : ''), w);
+      el('div', 'num', s).textContent = wp.slot;
+      el('div', 'nm', s).textContent = wp.name;
+      const am = el('div', 'am', s);
+      am.textContent = wp.locked ? 'LOCKED' : (wp.ammo === Infinity ? '∞' : wp.ammo);
+      this.slotEls.push({ root: s, am });
     }
-    const st = RADIO[g.radioStation];
-    this.radioEl.textContent = `♪ ${st.name} · ${st.song}`;
-    // Crosshair only when armed on foot.
-    this.crosshair.style.display = (!g.player.onFoot || g.player.weapon <= 1) ? 'none' : 'block';
+
+    // Car HUD.
+    const c = el('div', '', hud); c.id = 'carhud';
+    this.carName = el('div', 'nm', c);
+    this.carCond = el('div', 'cond', c);
+    const cb = el('div', 'condbar', c);
+    this.carCondBar = el('i', '', cb);
+    this.carSpd = el('div', 'spd', c);
+    this.carRadio = el('div', 'radio', c);
+
     // Minimap.
-    this._drawMinimap();
-    const d = g.districts.current;
-    this.districtEl.textContent = `${d.name} · ${g.districts.standingLabel} ${d.standing}%`;
-    const rank = [...RANKS].reverse().find((r) => g.respect * 20 >= r.rp) || RANKS[0];
-    this.respectEl.textContent = `RESPECT ${g.respect} · ${rank.name}`;
+    const mm = el('div', '', hud); mm.id = 'minimap';
+    this.mapCanvas = el('canvas', '', mm);
+    this.mapCanvas.width = 150; this.mapCanvas.height = 150;
+    this.mapDist = el('div', 'dist', mm);
+    this.mapResp = el('div', 'resp', mm);
+
+    // Dialogue.
+    const d = el('div', 'panel', hud); d.id = 'dialogue';
+    const row = el('div', 'row', d);
+    const por = el('div', '', row); por.id = 'portrait';
+    por.textContent = '👩';
+    const dt = el('div', '', row);
+    this.dWho = el('div', 'who', dt);
+    this.dTxt = el('div', 'txt', dt);
+    this.dRep = el('div', 'rep', dt);
+
+    // Toast + crosshair.
+    this.toastEl = el('div', '', hud); this.toastEl.id = 'toast';
+    this.toastEl.style.display = 'none';
+    const cr = el('div', '', hud); cr.id = 'cross';
+
+    // Full-screen overlay (intro / title / pause).
+    this.overlay = el('div', '', r); this.overlay.id = 'overlay';
+    this.ovTitle = el('h1', '', this.overlay);
+    this.ovText = el('p', '', this.overlay);
+    this.ovHint = el('div', 'hint', this.overlay);
+    this.showOverlay('intro');
   }
 
-  _drawMinimap() {
-    const c = this.minimap.getContext('2d');
-    const W = this.minimap.width, H = this.minimap.height;
-    const g = this.game;
-    c.clearRect(0, 0, W, H);
-    c.save();
-    c.beginPath(); c.arc(W / 2, H / 2, W / 2 - 2, 0, Math.PI * 2); c.clip();
-    c.fillStyle = '#20242e';
-    c.fillRect(0, 0, W, H);
-    const scale = W / 640;
-    const px = W / 2 - g.player.x * scale;
-    const pz = H / 2 - g.player.z * scale;
-    // Roads.
-    c.strokeStyle = '#3a3f4a';
-    c.lineWidth = 5;
-    for (let i = -4; i <= 4; i++) {
-      const p = i * 64;
-      c.beginPath(); c.moveTo(px + p * scale, 0); c.lineTo(px + p * scale, H); c.stroke();
-      c.beginPath(); c.moveTo(0, pz + p * scale); c.lineTo(W, pz + p * scale); c.stroke();
+  showOverlay(kind) {
+    if (!kind) { this.overlay.style.display = 'none'; return; }
+    this.overlay.style.display = 'flex';
+    if (kind === 'intro') {
+      this.ovTitle.textContent = 'SOLARA';
+      this.ovText.textContent = 'A golden-hour coastal city. Eight jobs from fixer Lupe stand between Kai Mercer and the top of the city — steal the cars, outrun the PCPD, and don\'t let the helicopter catch you at three stars.';
+      this.ovHint.textContent = 'Press ENTER to continue';
+    } else if (kind === 'title') {
+      this.ovTitle.textContent = 'SOLARA';
+      this.ovText.textContent = 'NEW GAME · Kai Mercer is back in Solara. WASD walk / drive · F enter car · Click shoot · R radio · M map · P pause · Z / X / C crew';
+      this.ovHint.textContent = 'Press ENTER to play';
+    } else if (kind === 'paused') {
+      this.ovTitle.textContent = 'PAUSED';
+      this.ovText.textContent = 'Map · Missions · Crew · Settings';
+      this.ovHint.textContent = 'Press P to resume';
     }
-    // Ocean.
-    c.fillStyle = '#2fa8b8';
-    c.fillRect(px + 250 * scale, 0, W, H);
-    // Mission target.
-    const t = g.missions.target();
-    if (t) {
-      c.fillStyle = '#ffc93a';
-      c.beginPath(); c.arc(px + t.x * scale, pz + t.z * scale, 6, 0, Math.PI * 2); c.fill();
+  }
+
+  toast(text) {
+    this.toastText = text;
+    this.toastUntil = performance.now() + 3500;
+    this.toastEl.textContent = text;
+    this.toastEl.style.display = 'block';
+  }
+
+  setDialogue(name, role, text, reply) {
+    this.dialogue = { name, role, text, reply };
+  }
+
+  rankFor(respect) {
+    let r = RANKS[0];
+    for (const x of RANKS) if (respect >= x.at) r = x;
+    return r;
+  }
+
+  fmtClock(hours) {
+    const h = Math.floor(hours);
+    const m = Math.floor((hours - h) * 60);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+
+  update(g) {
+    // Mission panel.
+    const m = g.missions.current;
+    this.mCh.textContent = `${m.ch} · ${m.title}`;
+    this.mTitle.textContent = this.missionObjective(m);
+    this.mStage.textContent = `STAGE ${g.missions.stage}/${m.stages}`;
+    const bars = this.mBar.querySelectorAll('i');
+    bars.forEach((b, i) => { b.className = i < g.missions.stage ? 'on' : ''; });
+    this.mNext.textContent = `NEXT: ${m.giver} — ${m.next}`;
+
+    // Money / clock / stars.
+    this.moneyEl.textContent = `$${g.money.toLocaleString()}`;
+    this.clockEl.textContent = this.fmtClock(g.hours);
+    let stars = '';
+    for (let i = 0; i < 5; i++) stars += `<span class="${i < g.wanted.stars ? 'on' : 'off'}">★</span>`;
+    this.starsEl.innerHTML = stars;
+    this.cleanEl.textContent = g.wanted.stars === 0 ? 'CLEAN' : '';
+
+    // PCPD panel.
+    const units = g.police.cruisers.slice(0, 4);
+    this.pHead.textContent = `PCPD RESPONSE — ${units.length} UNITS · CODE ${g.wanted.code}`;
+    this.pUnits.innerHTML = units.map((c) => {
+      const d = Math.round(Math.hypot(c.x - g.player.x, c.z - g.player.z));
+      const cls = c.status === 'PURSUIT' ? 'pursuit' : (c.status === 'WRECKED' ? 'wrecked' : 'st');
+      return `<div class="unit"><span>${c.name}</span><span>${d} m</span><span class="${cls}">${c.status}</span></div>`;
+    }).join('') || '<div class="unit"><span>No units in the area</span></div>';
+    const wrecked = units.filter((c) => c.status === 'WRECKED').length;
+    if (wrecked > 0) {
+      this.pUnits.innerHTML += `<div class="unit"><span>${wrecked} wrecked · search grid active</span></div>`;
     }
-    // Wanted search circle + red edge.
+    this.pAir.textContent = g.police.heli ? '✦ AIR UNIT DEPLOYED' : '';
     if (g.wanted.stars > 0) {
-      c.strokeStyle = g.wanted.inSight ? '#ff4040' : '#4a90e8';
-      c.lineWidth = 2;
-      c.beginPath(); c.arc(W / 2, H / 2, 34 + (100 - g.wanted.evading) * 0.3, 0, Math.PI * 2); c.stroke();
-      c.fillStyle = 'rgba(74,144,232,0.12)';
-      c.beginPath(); c.arc(W / 2, H / 2, 34 + (100 - g.wanted.evading) * 0.3, 0, Math.PI * 2); c.fill();
+      this.pBadge.style.display = 'inline-block';
+      this.pBadge.textContent = g.wanted.inSight ? 'IN SIGHT' : 'HIDDEN';
+      this.pBadge.className = g.wanted.inSight ? 'sight' : 'hidden';
+      this.pBadge.id = 'badge';
+      this.pEvade.textContent = `EVADING ${Math.round(g.wanted.evading)}%`;
+    } else {
+      this.pBadge.style.display = 'none';
+      this.pEvade.textContent = '';
     }
-    // Police dots.
-    c.fillStyle = '#ff4040';
-    for (const cr of g.police.cruisers) {
-      c.beginPath(); c.arc(px + cr.x * scale, pz + cr.z * scale, 4, 0, Math.PI * 2); c.fill();
+
+    // Weapon slots.
+    this.slotEls.forEach((s, i) => {
+      const wp = WEAPONS[i];
+      s.root.classList.toggle('sel', g.player.weaponSlot === wp.slot);
+      if (!wp.locked) {
+        if (wp.slot === 2) s.am.textContent = `${g.player.weaponAmmo} · ${wp.reserve}`;
+        else if (wp.ammo === Infinity) s.am.textContent = '∞';
+      }
+    });
+
+    // Car HUD.
+    if (g.player.car) {
+      const car = g.player.car;
+      this.carName.textContent = car.name;
+      this.carCond.textContent = `CONDITION ${Math.round(car.condition)}%`;
+      this.carCondBar.style.width = `${car.condition}%`;
+      const kmh = Math.round(Math.abs(car.speed) * 3.6);
+      const gear = car.speed === 0 ? 'N' : `G${Math.min(5, 1 + Math.floor(Math.abs(car.speed) / 9))}`;
+      this.carSpd.textContent = `${kmh} km/h · ${gear}`;
+      this.carRadio.textContent = `♪ ${RADIO[g.radioIdx].name} · ${RADIO[g.radioIdx].track}`;
+    } else {
+      this.carName.textContent = '';
+      this.carCond.textContent = '';
+      this.carCondBar.style.width = '0%';
+      this.carSpd.textContent = '';
+      this.carRadio.textContent = `♪ ${RADIO[g.radioIdx].name} · ${RADIO[g.radioIdx].track}`;
     }
-    if (g.police.heli) {
-      c.fillStyle = '#ff9040';
-      c.beginPath(); c.arc(px + g.police.heli.group.position.x * scale, pz + g.police.heli.group.position.z * scale, 5, 0, Math.PI * 2); c.fill();
+
+    // Minimap.
+    this.drawMinimap(g);
+
+    // Dialogue.
+    this.dWho.textContent = `${this.dialogue.name} · ${this.dialogue.role}`;
+    this.dTxt.textContent = this.dialogue.text;
+    this.dRep.textContent = this.dialogue.reply ? `Kai: "${this.dialogue.reply}"` : '';
+
+    // Toast expiry.
+    if (this.toastText && performance.now() > this.toastUntil) {
+      this.toastText = '';
+      this.toastEl.style.display = 'none';
+    }
+  }
+
+  missionObjective(m) {
+    const objs = {
+      HOMECOMING: 'Meet Lupe at the pier',
+      'BORROWED WHEELS': 'Get in the coupe',
+      'SHARK TAX': 'Collect at the middle stall',
+      'TIDE RUNNER': 'Drop it at North Gate',
+      'DIRTY BADGE': 'Lean on the badge',
+      'DOCKSIDE AMBUSH': 'Spring the trap',
+      'NEON NIGHTS': 'Light up Old Town',
+      'GOLDEN HOUR': 'Take the city',
+    };
+    return objs[m.title] || m.title;
+  }
+
+  drawMinimap(g) {
+    const ctx = this.mapCanvas.getContext('2d');
+    const W = 150, C = W / 2;
+    ctx.clearRect(0, 0, W, W);
+    ctx.fillStyle = '#0e1a2a';
+    ctx.beginPath(); ctx.arc(C, C, C - 2, 0, Math.PI * 2); ctx.fill();
+    // Roads.
+    ctx.strokeStyle = '#3a4a5c'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(8, C); ctx.lineTo(W - 8, C); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(C, 8); ctx.lineTo(C, W - 8); ctx.stroke();
+    // Search circle when wanted.
+    if (g.wanted.stars > 0) {
+      ctx.strokeStyle = '#3aa0ff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(C, C, 46, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = '#ff3b30'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(C, C, 46, -0.6, 0.9); ctx.stroke();
     }
     // Player arrow.
-    c.fillStyle = '#ffd23a';
-    c.save();
-    c.translate(W / 2, H / 2);
-    c.rotate(g.player.heading || 0);
-    c.beginPath(); c.moveTo(0, -8); c.lineTo(5, 6); c.lineTo(-5, 6); c.closePath(); c.fill();
-    c.restore();
-    c.restore();
-  }
-
-  drawBigMap() {
-    const c = this.mapCanvas.getContext('2d');
-    const W = this.mapCanvas.width, H = this.mapCanvas.height;
-    const g = this.game;
-    c.fillStyle = '#1c2029';
-    c.fillRect(0, 0, W, H);
-    const z = this._mapZoom || 1;
-    const ox = this._mapOX || 0, oy = this._mapOY || 0;
-    const scale = (W / 640) * z;
-    const px = W / 2 - g.player.x * scale + ox;
-    const pz = H / 2 - g.player.z * scale + oy;
-    // Districts.
-    c.font = 'bold 13px Arial';
-    for (const d of g.districts.list) {
-      c.fillStyle = 'rgba(74,144,232,0.14)';
-      c.fillRect(px + d.x0 * scale, pz + d.z0 * scale, (d.x1 - d.x0) * scale, (d.z1 - d.z0) * scale);
-      c.strokeStyle = 'rgba(255,255,255,0.25)';
-      c.strokeRect(px + d.x0 * scale, pz + d.z0 * scale, (d.x1 - d.x0) * scale, (d.z1 - d.z0) * scale);
-      c.fillStyle = '#cfd6e4';
-      c.fillText(d.name, px + d.x0 * scale + 6, pz + d.z0 * scale + 18);
+    const px = C + ((g.player.x / 320) * (C - 12));
+    const pz = C + ((g.player.z / 260) * (C - 12));
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath();
+    ctx.arc(Math.max(10, Math.min(W - 10, px)), Math.max(10, Math.min(W - 10, pz)), 5, 0, Math.PI * 2);
+    ctx.fill();
+    // Police dots.
+    ctx.fillStyle = '#ff3b30';
+    for (const c of g.police.cruisers) {
+      const cx = C + ((c.x / 320) * (C - 12));
+      const cz = C + ((c.z / 260) * (C - 12));
+      ctx.beginPath(); ctx.arc(cx, cz, 3.5, 0, Math.PI * 2); ctx.fill();
     }
-    // Roads.
-    c.strokeStyle = '#3a3f4a';
-    c.lineWidth = 4;
-    for (let i = -4; i <= 4; i++) {
-      const p = i * 64;
-      c.beginPath(); c.moveTo(px + p * scale, 0); c.lineTo(px + p * scale, H); c.stroke();
-      c.beginPath(); c.moveTo(0, pz + p * scale); c.lineTo(W, pz + p * scale); c.stroke();
-    }
-    // Garage + mission target + waypoint.
-    c.fillStyle = '#39e6a3';
-    c.font = 'bold 15px Arial';
-    c.fillText('G SULLY’S GARAGE', px + 60 * scale, pz - 120 * scale);
-    const t = g.missions.target();
-    if (t) {
-      c.fillStyle = '#ffc93a';
-      c.beginPath(); c.arc(px + t.x * scale, pz + t.z * scale, 8, 0, Math.PI * 2); c.fill();
-    }
-    if (g.waypoint) {
-      c.fillStyle = '#ff5fa2';
-      c.beginPath(); c.arc(px + g.waypoint.x * scale, pz + g.waypoint.z * scale, 7, 0, Math.PI * 2); c.fill();
-      c.strokeStyle = '#ff5fa2';
-      c.beginPath(); c.moveTo(px + g.player.x * scale, pz + g.player.z * scale);
-      c.lineTo(px + g.waypoint.x * scale, pz + g.waypoint.z * scale); c.stroke();
-    }
-    // Player.
-    c.fillStyle = '#ffd23a';
-    c.beginPath(); c.arc(px + g.player.x * scale, pz + g.player.z * scale, 7, 0, Math.PI * 2); c.fill();
+    this.mapDist.textContent = `${g.districts.name} · NEUTRAL ${g.districts.standing}%`;
+    const rank = this.rankFor(g.rp !== undefined ? g.rp : g.respect * 20);
+    this.mapResp.textContent = `RESPECT ${g.respect} · ${rank.name}`;
   }
 }

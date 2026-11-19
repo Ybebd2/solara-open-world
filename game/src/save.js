@@ -1,35 +1,33 @@
-// SOLARA — save / load through localStorage (F8 / F9).
-export class SaveGame {
-  constructor(key = 'solara-save-v1') {
-    this.key = key;
+// Save — F8 quick-saves, F9 loads. The save holds money, respect, mission
+// index, player position, hour, and owned garage upgrades in localStorage.
+// Loading restores them and puts Kai back on his feet at the saved spot.
+const KEY = 'solara-save-v1';
+
+export class Save {
+  constructor(game) {
+    this.game = game;
   }
 
-  save(state) {
+  write() {
+    const g = this.game;
+    const data = {
+      money: g.money, respect: g.respect, missionIndex: g.missions.index,
+      hours: g.hours, radioIdx: g.radioIdx,
+      x: g.player.x, z: g.player.z,
+      upgrades: [...g.garage.owned],
+      at: Date.now(),
+    };
     try {
-      const data = {
-        money: state.money,
-        respect: state.respect,
-        missionIndex: state.missions.index,
-        missionStage: state.missions.stage,
-        hours: state.hours,
-        px: state.player.x,
-        pz: state.player.z,
-        health: state.player.health,
-        armour: state.player.armour,
-        garage: state.garage.owned,
-        districts: state.districts.list.map((d) => d.standing),
-        savedAt: Date.now(),
-      };
-      localStorage.setItem(this.key, JSON.stringify(data));
-      return data;
+      localStorage.setItem(KEY, JSON.stringify(data));
+      return true;
     } catch (e) {
-      return null;
+      return false;
     }
   }
 
-  load() {
+  read() {
     try {
-      const raw = localStorage.getItem(this.key);
+      const raw = localStorage.getItem(KEY);
       if (!raw) return null;
       return JSON.parse(raw);
     } catch (e) {
@@ -37,24 +35,22 @@ export class SaveGame {
     }
   }
 
-  apply(game, data) {
-    if (!data) return false;
-    game.money = data.money ?? game.money;
-    game.respect = data.respect ?? game.respect;
-    game.hours = data.hours ?? game.hours;
-    game.missions.index = data.missionIndex ?? 0;
-    game.missions.stage = data.missionStage ?? 0;
-    game.missions.done = game.missions.index >= game.missions.jobs.length;
-    game.missions.resetTimer();
-    game.player.health = data.health ?? 100;
-    game.player.armour = data.armour ?? 0;
-    game.player.group.position.set(data.px ?? -238, 0, data.pz ?? -12);
-    if (Array.isArray(data.garage)) game.garage.owned = [...data.garage];
-    if (Array.isArray(data.districts)) {
-      data.districts.forEach((s, i) => {
-        if (game.districts.list[i]) game.districts.list[i].standing = s;
-      });
-    }
+  load() {
+    const d = this.read();
+    if (!d) return false;
+    const g = this.game;
+    g.money = d.money;
+    g.respect = d.respect;
+    g.missions.index = d.missionIndex;
+    g.missions.stage = 1;
+    g.missions.moveBeacon();
+    g.hours = d.hours;
+    g.radioIdx = d.radioIdx || 0;
+    g.garage.owned = new Set(d.upgrades || []);
+    if (g.player.car) g.player.enterCar();
+    g.player.group.position.set(d.x, 0, d.z);
+    g.player.group.visible = true;
+    g.player.onFoot = true;
     return true;
   }
 }

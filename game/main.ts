@@ -1,5 +1,4 @@
-// SOLARA — game entrypoint.
-// The real boot lives in ./src/main.js (the page loads that module
-// directly); this file re-exports it so the dossier lists the load
-// order plainly.
-export { startGame } from './src/main.js';
+// Game entrypoint (TypeScript module). The real boot lives in
+// ./src/main.js — this module just pulls it in so the dossier's file
+// graph has a single typed entry next to index.html.
+import './src/main.js';

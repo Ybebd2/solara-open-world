@@ -1,62 +1,53 @@
-// SOLARA — the wanted system: five gold stars, evasion, HIDDEN / IN SIGHT,
-// and the escape payout.
-import { clamp } from './config.js';
+// Wanted — 5 stars, EVADING meter, HIDDEN / IN SIGHT. Carjack adds a star.
+// Evading fills slowly (3%/s) while no cruiser or officer can see the
+// player, and drains fast when one is close. At 100% evading a star drops.
+import { TUNING } from './config.js';
 
 export class Wanted {
   constructor() {
     this.stars = 0;
-    this.evading = 0;      // 0..100 — fills while hidden
+    this.evading = 0;   // 0–100
     this.inSight = false;
-    this._escapeTimer = 0;
   }
 
-  addStars(n) {
-    this.stars = clamp(this.stars + n, 0, 5);
-    this.evading = 0;
+  addStar(n = 1) {
+    this.stars = Math.min(5, this.stars + n);
+    if (this.stars > 0) this.evading = 0;
   }
 
-  removeStars(n) {
-    this.stars = clamp(this.stars - n, 0, 5);
+  removeStar(n = 1) {
+    this.stars = Math.max(0, this.stars - n);
     if (this.stars === 0) this.evading = 0;
   }
 
-  update(dt, police, playerPos) {
+  // Nearest police distance decides seen/hidden and the evade rate.
+  update(dt, player, police) {
     if (this.stars === 0) {
       this.inSight = false;
       this.evading = 0;
-      return 0;
+      return;
     }
-    // Seen if any cruiser or officer is close.
-    let seen = false;
+    let nearest = Infinity;
     for (const c of police.cruisers) {
-      if (Math.hypot(c.x - playerPos.x, c.z - playerPos.z) < 55) { seen = true; break; }
+      nearest = Math.min(nearest, Math.hypot(c.x - player.x, c.z - player.z));
     }
-    if (!seen) {
-      for (const o of police.officers) {
-        if (Math.hypot(o.x - playerPos.x, o.z - playerPos.z) < 35) { seen = true; break; }
-      }
+    for (const o of police.officers) {
+      nearest = Math.min(nearest, Math.hypot(o.x - player.x, o.z - player.z));
     }
+    const seen = nearest < TUNING.sightCruiser;
     this.inSight = seen;
     if (seen) {
-      this.evading = Math.max(0, this.evading - dt * 14);
-      this._escapeTimer = 0;
+      this.evading = Math.max(0, this.evading - TUNING.evadeDrainNear * dt);
     } else {
-      this.evading = Math.min(100, this.evading + dt * 3);
+      this.evading = Math.min(100, this.evading + TUNING.evadeFillFar * dt);
       if (this.evading >= 100) {
-        this._escapeTimer += dt;
-        if (this._escapeTimer > 1) {
-          const paid = this.stars * 150;
-          this.stars = 0;
-          this.evading = 0;
-          this._escapeTimer = 0;
-          return paid;
-        }
+        this.removeStar(1);
+        this.evading = 0;
       }
     }
-    return 0;
   }
 
   get code() {
-    return this.stars <= 1 ? 1 : this.stars <= 3 ? 2 : 3;
+    return Math.min(3, Math.max(1, this.stars));
   }
 }

@@ -3,111 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SOLARA — an open-world crime story</title>
+<title>SOLARA — an open-world crime game</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1218;
-    font-family: Arial, Helvetica, sans-serif; color: #f2ede4; }
-  #app, #app canvas { width: 100%; height: 100%; display: block; }
-  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
-  .panel { position: absolute; background: rgba(12, 14, 20, 0.72); border: 1px solid rgba(255,255,255,0.14);
-    border-radius: 8px; padding: 10px 12px; backdrop-filter: blur(2px); }
-  .mission { top: 14px; left: 14px; width: 340px; }
-  .mission-chapter { font-size: 13px; letter-spacing: 1px; color: #ffc93a; font-weight: bold; }
-  .mission-title { font-size: 17px; font-weight: bold; margin-top: 2px; }
-  .mission-stage { font-size: 12px; color: #9fb4d8; margin-top: 2px; }
-  .stage-bar { display: flex; gap: 4px; margin-top: 6px; }
-  .stage-seg { flex: 1; height: 6px; background: #3a3f4a; border-radius: 3px; }
-  .stage-seg.filled { background: #ff9f1a; }
-  .mission-next { font-size: 12px; color: #cfd6e4; margin-top: 6px; }
-  .mission-timer { font-size: 15px; color: #ff5f5f; font-weight: bold; margin-top: 4px; }
-  .top-right { position: absolute; top: 14px; right: 14px; text-align: right; }
-  .money { font-size: 26px; font-weight: bold; color: #7ee2a0; text-shadow: 0 2px 4px rgba(0,0,0,0.6); }
-  .clock { font-size: 16px; color: #f2ede4; margin-top: 2px; }
-  .stars { font-size: 30px; letter-spacing: 2px; margin-top: 2px; }
-  .stars .star { color: #4a4f5a; }
-  .stars .star.lit { color: #ffc93a; text-shadow: 0 0 8px rgba(255,201,58,0.8); }
-  .sight-badge { display: inline-block; margin-top: 4px; padding: 3px 10px; border-radius: 12px;
-    font-size: 12px; font-weight: bold; letter-spacing: 1px; }
-  .sight-badge.sight { background: #d8202a; color: #fff; }
-  .sight-badge.hidden { background: #2a6fd8; color: #fff; }
-  .sight-badge.clean { background: rgba(255,255,255,0.16); color: #cfd6e4; }
-  .evade { font-size: 12px; color: #9fb4d8; margin-top: 3px; }
-  .pcpd { top: 14px; left: 50%; transform: translateX(-50%); width: 320px; }
-  .pcpd-title { font-size: 13px; font-weight: bold; letter-spacing: 1px; color: #ffd23a; }
-  .pcpd-row { display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0; color: #e8e4da; }
-  .pcpd-row .st-PURSUIT { color: #ff9f1a; font-weight: bold; }
-  .pcpd-row .st-SEARCHING { color: #9fb4d8; }
-  .pcpd-row .st-WRECKED { color: #8a8f9a; text-decoration: line-through; }
-  .pcpd-row .st-FIRING { color: #ff4040; font-weight: bold; }
-  .pcpd-note { font-size: 11px; color: #9fb4d8; margin-top: 3px; }
-  .pcpd-air { font-size: 13px; font-weight: bold; color: #ff9040; margin-top: 4px; }
-  .map-wrap { position: absolute; left: 14px; bottom: 14px; }
-  .minimap { width: 190px; height: 190px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.35);
-    background: #20242e; box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
-  .district { margin-top: 6px; font-size: 13px; font-weight: bold; color: #f2ede4;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
-  .respect { font-size: 12px; color: #9fb4d8; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
-  .bottom-right { position: absolute; right: 14px; bottom: 14px; text-align: right; }
-  .weapon-bar { display: flex; gap: 6px; justify-content: flex-end; }
-  .slot { width: 74px; padding: 6px 4px; background: rgba(12,14,20,0.72); border: 1px solid rgba(255,255,255,0.14);
-    border-radius: 6px; text-align: center; }
-  .slot.selected { border-color: #ff9f1a; background: rgba(255,159,26,0.25); }
-  .slot.locked { opacity: 0.45; }
-  .slot-key { font-size: 10px; color: #9fb4d8; }
-  .slot-name { font-size: 12px; font-weight: bold; }
-  .slot-ammo { font-size: 15px; color: #ffd23a; font-weight: bold; }
-  .car-info { margin-top: 8px; background: rgba(12,14,20,0.72); border: 1px solid rgba(255,255,255,0.14);
-    border-radius: 6px; padding: 8px 10px; text-align: left; min-width: 260px; }
-  .car-name { font-size: 15px; font-weight: bold; }
-  .car-cond { font-size: 12px; color: #cfd6e4; margin-top: 3px; }
-  .cond-bar { display: inline-block; width: 120px; height: 8px; background: #3a3f4a; border-radius: 4px;
-    vertical-align: middle; margin: 0 4px; }
-  .cond-bar div { height: 100%; background: #39c06a; border-radius: 4px; }
-  .car-speed { font-size: 16px; font-weight: bold; margin-top: 3px; }
-  .radio { margin-top: 6px; font-size: 13px; color: #ffd23a; }
-  .crosshair { position: absolute; left: 50%; top: 50%; width: 16px; height: 16px;
-    transform: translate(-50%, -50%); }
-  .crosshair::before, .crosshair::after { content: ''; position: absolute; background: #ff2a2a;
-    box-shadow: 0 0 4px rgba(255,42,42,0.9); }
-  .crosshair::before { left: 7px; top: 0; width: 2px; height: 16px; }
-  .crosshair::after { left: 0; top: 7px; width: 16px; height: 2px; }
-  .cross-dot { position: absolute; left: 6px; top: 6px; width: 4px; height: 4px; border-radius: 50%;
-    background: #ff2a2a; }
-  .crosshair { border: 2px solid rgba(255,42,42,0.9); border-radius: 50%; }
-  .dialogue { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
-    display: none; gap: 12px; align-items: flex-start; max-width: 640px;
-    background: rgba(12,14,20,0.82); border: 1px solid rgba(255,95,162,0.5); border-radius: 10px; padding: 10px 14px; }
-  .dialogue.show { display: flex; }
-  .portrait { width: 96px; height: 96px; border: 3px solid #ff5fa2; border-radius: 8px; flex: none; }
-  .dlg-name { font-size: 13px; font-weight: bold; color: #ff9fc6; letter-spacing: 1px; }
-  .dlg-text { font-size: 15px; margin-top: 4px; line-height: 1.35; }
-  .dlg-reply { font-size: 13px; color: #9fd8c9; margin-top: 6px; font-style: italic; }
-  .toasts { position: absolute; top: 150px; right: 14px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
-  .toast { background: rgba(12,14,20,0.85); border: 1px solid rgba(255,201,58,0.5); border-radius: 8px;
-    padding: 8px 14px; font-size: 15px; text-align: right; }
-  .toast span { display: block; font-size: 12px; color: #9fb4d8; }
-  .overlay { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center;
-    justify-content: center; background: rgba(10, 8, 16, 0.55); pointer-events: none; }
-  .overlay.show { display: flex; }
-  .game-title { font-size: 84px; font-weight: bold; letter-spacing: 12px; color: #ffd23a;
-    text-shadow: 0 0 32px rgba(255,95,162,0.7), 0 4px 0 rgba(0,0,0,0.4); }
-  .game-sub { font-size: 18px; letter-spacing: 6px; color: #f2ede4; margin-top: 8px; }
-  .game-hint { font-size: 15px; color: #cfd6e4; margin-top: 26px; }
-  .title-menu { margin-top: 30px; display: flex; flex-direction: column; gap: 10px; text-align: center; }
-  .menu-item { font-size: 20px; letter-spacing: 3px; color: #cfd6e4; }
-  .menu-item:first-child { color: #ffd23a; font-weight: bold; }
-  .wasted-big { font-size: 96px; font-weight: bold; letter-spacing: 10px; color: #ff2a2a;
-    text-shadow: 0 0 40px rgba(255,42,42,0.8); }
-  .big-map { width: 640px; height: 640px; border: 2px solid rgba(255,255,255,0.3); border-radius: 8px; }
-  .garage-list { margin-top: 20px; display: flex; flex-direction: column; gap: 8px; }
-  .garage-row { display: flex; justify-content: space-between; gap: 30px; font-size: 16px;
-    background: rgba(12,14,20,0.8); padding: 8px 14px; border-radius: 6px; min-width: 420px; }
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #0b0b12; height: 100%; }
+  canvas { display: block; }
 </style>
 </head>
 <body>
-<div id="app"></div>
-<div id="hud"></div>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

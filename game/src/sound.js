@@ -1,52 +1,44 @@
-// SOLARA — one-shot sound effects, synthesised with WebAudio.
-export class SoundFX {
+// Sound — one-shot effects on the shared AudioContext: gunshot, siren
+// blip, pickup chime, and the wasted sting. All synthesized, no files.
+export class Sound {
   constructor(audio) {
     this.audio = audio;
   }
 
-  _ctx() {
-    if (!this.audio.ctx) this.audio.unlock();
-    return this.audio.ctx;
-  }
-
-  _blip(freq, dur, type = 'square', vol = 0.06) {
-    const ctx = this._ctx();
-    if (!ctx) return;
+  blip(freq, dur, type = 'square', vol = 0.08) {
+    const a = this.audio;
+    if (!a.ctx) return;
     try {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
+      const o = a.ctx.createOscillator();
+      const g = a.ctx.createGain();
       o.type = type;
       o.frequency.value = freq;
-      g.gain.value = vol;
-      o.connect(g).connect(ctx.destination);
+      g.gain.setValueAtTime(vol, a.ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, a.ctx.currentTime + dur);
+      o.connect(g);
+      g.connect(a.ctx.destination);
       o.start();
-      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
-      o.stop(ctx.currentTime + dur);
-    } catch (e) { /* ignore */ }
+      o.stop(a.ctx.currentTime + dur);
+    } catch (e) {}
   }
 
-  _noise(dur, vol = 0.12) {
-    const ctx = this._ctx();
-    if (!ctx) return;
-    try {
-      const len = Math.floor(ctx.sampleRate * dur);
-      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-      const d = buf.getChannelData(0);
-      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
-      const src = ctx.createBufferSource();
-      src.buffer = buf;
-      const g = ctx.createGain();
-      g.gain.value = vol;
-      src.connect(g).connect(ctx.destination);
-      src.start();
-    } catch (e) { /* ignore */ }
+  shoot() {
+    this.blip(180, 0.12, 'square', 0.12);
+    this.blip(90, 0.18, 'sawtooth', 0.08);
   }
 
-  shot() { this._noise(0.14, 0.16); this._blip(160, 0.08, 'square', 0.05); }
-  hit() { this._blip(320, 0.07, 'square', 0.06); }
-  cash() { this._blip(880, 0.09, 'sine', 0.07); this._blip(1320, 0.12, 'sine', 0.06); }
-  carjack() { this._blip(220, 0.12, 'sawtooth', 0.07); }
-  siren() { this._blip(660, 0.25, 'sine', 0.04); this._blip(520, 0.25, 'sine', 0.04); }
-  wasted() { this._blip(110, 0.7, 'sawtooth', 0.08); }
-  click() { this._blip(1200, 0.04, 'sine', 0.04); }
+  siren() {
+    this.blip(720, 0.3, 'sine', 0.05);
+    setTimeout(() => this.blip(540, 0.3, 'sine', 0.05), 320);
+  }
+
+  pickup() {
+    this.blip(660, 0.1, 'sine', 0.07);
+    setTimeout(() => this.blip(880, 0.14, 'sine', 0.07), 110);
+  }
+
+  wasted() {
+    this.blip(220, 0.5, 'sawtooth', 0.1);
+    setTimeout(() => this.blip(165, 0.7, 'sawtooth', 0.1), 200);
+  }
 }
