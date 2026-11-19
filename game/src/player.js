@@ -184,17 +184,18 @@ export class Player {
       if (onPunch) onPunch();
     }
     // Shoot: a hitscan shot, one per click, with a magazine. Fists never
-    // shoot — they punch instead.
+    // shoot — they punch instead. The cooldown and muzzle flash are only
+    // set when a shot actually fires (ammo > 0): an empty click costs
+    // nothing, so the queued shot main.js holds is not burned on it and the
+    // reload below can start at once.
     const w = this.currentWeapon();
-    if (input.shoot && this.cooldown <= 0 && this.weaponIndex > 0) {
+    if (input.shoot && this.cooldown <= 0 && this.weaponIndex > 0 && this.ammo > 0) {
       this.cooldown = w.id === 'smg' ? 0.12 : 0.28;
       this.muzzle = 1;
       this.gun.visible = true;
-      if (this.ammo > 0) {
-        this.ammo -= 1;
-        this.ammoBySlot[this.weaponIndex] = this.ammo;
-        if (onShoot) onShoot();
-      }
+      this.ammo -= 1;
+      this.ammoBySlot[this.weaponIndex] = this.ammo;
+      if (onShoot) onShoot();
     }
     if (this.ammo <= 0 && this.cooldown <= 0 && input.shoot && this.weaponIndex > 0) {
       // Empty click: reload after a beat.

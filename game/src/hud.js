@@ -125,9 +125,12 @@ export class HUD {
     // Weapon bar: five numbered slots; locked ones show their price.
     const wHtml = s.weapons.map((w, i) => {
       const active = i === s.weaponIndex ? ' active' : '';
+      // ammoBySlot mirrors the weapon list; fall back to the current
+      // weapon's ammo if a caller passes a state without it.
+      const ammo = s.ammoBySlot ? s.ammoBySlot[i] : s.ammo;
       const label = w.locked
         ? `${i + 1} ${w.name} · LOCKED $${w.price}`
-        : `${i + 1} ${w.name}${w.ammo === Infinity ? ' ∞' : ' ' + s.ammoBySlot[i]}`;
+        : `${i + 1} ${w.name}${w.ammo === Infinity ? ' ∞' : ' ' + ammo}`;
       return `<span class="slot${active}${w.locked ? ' locked' : ''}">${label}</span>`;
     }).join('');
     if (wHtml !== this._weaponHtml) {

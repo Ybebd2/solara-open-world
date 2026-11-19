@@ -222,7 +222,9 @@ export class Police {
   units(playerPos) {
     const list = this.cars.map((c) => {
       const d = Math.hypot(c.pos.x - playerPos.x, c.pos.z - playerPos.z);
-      return { name: c.callsign ?? 'PCPD', dist: Math.round(d), status: d < 25 ? 'PURSUIT' : d < 60 ? 'SEARCHING' : 'SEARCHING' };
+      // A unit closer than 25 m is on the player (PURSUIT); anything
+      // further out is still combing the grid (SEARCHING).
+      return { name: c.callsign ?? 'PCPD', dist: Math.round(d), status: d < 25 ? 'PURSUIT' : 'SEARCHING' };
     });
     if (this.heli) {
       const d = Math.hypot(this.heli.pos.x - playerPos.x, this.heli.pos.z - playerPos.z);

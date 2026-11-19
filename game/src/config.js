@@ -43,6 +43,7 @@ export const CONFIG = {
   HEAT_PER_CAR_STEAL: 1,
   HEAT_PER_PEDESTRIAN_HIT: 1,
   HEAT_PER_POLICE_HIT: 1,
+  // Heat decays ~0.06/s, so one star fades in about 16 quiet seconds.
   HEAT_DECAY_PER_SEC: 0.06,
   POLICE_CAR_SPEED: 34,
   POLICE_FOOT_SPEED: 8,
@@ -157,8 +158,10 @@ export function makeRandom(seed) {
   };
 }
 
-// Pick one item from an array with a seeded random.
+// Pick one item from an array with a seeded random. An empty array has
+// nothing to pick, so it returns undefined instead of indexing NaN.
 export function pick(rand, arr) {
+  if (!arr.length) return undefined;
   return arr[Math.floor(rand() * arr.length)];
 }
 

@@ -196,7 +196,9 @@ export class MissionManager {
         const next = m.collect.find((c) => !this.collected.includes(c));
         if (next) {
           const spot = state.places[next];
-          if (Math.hypot(p.x - spot.x, p.z - spot.z) < 8) {
+          // The drop radius is the mission's own radius (8 on every
+          // collect job), not a second hardcoded number.
+          if (Math.hypot(p.x - spot.x, p.z - spot.z) < m.radius) {
             this.collected.push(next);
             return { type: 'collected', name: next, left: m.collect.length - this.collected.length };
           }

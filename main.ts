@@ -35,6 +35,16 @@ cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
 mkdirSync(join(out, 'screenshots'), { recursive: true });
 if (existsSync(join(here, 'screenshots'))) cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
 
+// Fail fast when no screenshot shipped: the dossier needs at least one
+// image, and a hand-in with an empty screenshots/ folder would be judged
+// on text alone. This catches a broken render step before submission.
+const shotFiles = existsSync(join(here, 'screenshots'))
+  ? readdirSync(join(here, 'screenshots')).filter((f) => /\.(jpe?g|png|webp)$/i.test(f))
+  : [];
+if (shotFiles.length === 0) {
+  throw new Error('SOLARA v3 build failed: no screenshots in screenshots/ — the dossier needs at least one');
+}
+
 writeFileSync(
   join(out, 'dossier.json'),
   buildDossier(out, {

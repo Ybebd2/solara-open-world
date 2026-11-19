@@ -346,7 +346,10 @@ function onPunch() {
 // ----- Save / load -----
 function saveGame() {
   try {
+    // version stamps the save format, so a later version can migrate or
+    // ignore an older save instead of misreading it.
     localStorage.setItem(CONFIG.SAVE_KEY, JSON.stringify({
+      version: 3,
       cash: game.cash,
       missionIndex: missions.index,
       missionsDone: missions.done,

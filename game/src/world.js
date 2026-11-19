@@ -350,14 +350,20 @@ export function buildWorld(scene) {
   pier.castShadow = true;
   group.add(pier);
 
-  // Sunset Shards: ten glowing collectibles hidden around the city.
+  // Sunset Shards: ten glowing collectibles hidden around the city. A spot
+  // inside a building is re-rolled (bounded tries) instead of skipped, so
+  // the city really holds all ten — the HUD and the map both promise /10.
   const collectibles = [];
   const shardGeo = new THREE.OctahedronGeometry(0.9);
   const shardMat = new THREE.MeshBasicMaterial({ color: 0xffd23f });
   for (let i = 0; i < CONFIG.COLLECTIBLE_COUNT; i++) {
-    const x = -half + 20 + rand() * (GRID * pitch - 40);
-    const z = -half + 20 + rand() * (GRID * pitch - 40);
-    if (buildings.some((b) => x > b.minX - 3 && x < b.maxX + 3 && z > b.minZ - 3 && z < b.maxZ + 3)) continue;
+    let x = 0, z = 0, ok = false;
+    for (let tries = 0; tries < 20 && !ok; tries++) {
+      x = -half + 20 + rand() * (GRID * pitch - 40);
+      z = -half + 20 + rand() * (GRID * pitch - 40);
+      ok = !buildings.some((b) => x > b.minX - 3 && x < b.maxX + 3 && z > b.minZ - 3 && z < b.maxZ + 3);
+    }
+    if (!ok) continue;
     const shard = new THREE.Mesh(shardGeo, shardMat);
     shard.position.set(x, 1.4, z);
     group.add(shard);

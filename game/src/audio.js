@@ -116,6 +116,9 @@ export class Sound {
     this.songIndex = 0;
     this.noteIndex = 0;
     this.radioTimer = 0;
+    // Reset the note timer too, so the new station starts cleanly on its
+    // first beat instead of flipping a note the same frame it switches.
+    this.noteTimer = 0;
     return this.station();
   }
 

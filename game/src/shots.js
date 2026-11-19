@@ -19,6 +19,9 @@
 //   4-chase  — a three-star chase on the beach road with the police
 //              helicopter overhead (low enough to be in frame), the PCPD
 //              panel and the evading meter.
+//
+// The toast in each shot names the job and its number (JOB 1/8, …), so the
+// shot reads as a moment in the eight-job chain, not a stray scene.
 
 import { Car } from './vehicles.js';
 import { Helicopter } from './police.js';
@@ -91,7 +94,7 @@ export function applyShot(game, shot) {
     game.respect = 12;
     setCamera(places.pier.x + 10, 7, places.pier.z + 14, places.pier.x, 3, places.pier.z - 30);
     hud.dialogue('Lupe', 'Kai. You\u2019re out. I got you out, now you work for me — come to the pier and we\u2019ll talk.', 60);
-    hud.toast('Meet Lupe at the pier', 10);
+    hud.toast('Meet Lupe at the pier — JOB 1/8', 10);
   } else if (shot === '2-drive') {
     // Driving a pink-cabin pickup east down a street, two stars, the PCPD
     // panel live, police cars in the mirror, the radio on.

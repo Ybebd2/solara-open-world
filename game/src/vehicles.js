@@ -163,6 +163,8 @@ export class Car {
   }
 
   damage(amount) {
+    // Damage is never negative: a negative amount would silently repair.
+    amount = Math.max(0, amount);
     if (this.upgrades.armor) amount *= 0.6;
     this.condition = Math.max(0, this.condition - amount);
     return this.condition;
