@@ -1,60 +1,51 @@
-// SOLARA — wanted: stars, the evading meter, hidden/searching, and the
-// escape payout. Re-authored for the @witty-meteor-32 recording-M build.
-//
-// The badge under the stars reads IN SIGHT (red pill) while a unit sees
-// Kai, and HIDDEN (blue pill) while the search grid runs — once the
-// nearest unit is more than 55 m away the EVADING meter climbs (evading
-// 15% and rising) and the PCPD panel shows the search rows. Reaching
-// 100% escapes: stars clear, +$150 and +20 respect.
+// SOLARA — the wanted level: five stars, an EVADING meter that fills
+// while no unit can see Kai, and the HIDDEN / IN SIGHT call. Lose the
+// tail completely and a star comes off.
 import { clamp } from './config.js';
 
-const HIDDEN_RANGE = 55; // beyond this, no unit sees Kai
-const CLOSE_RANGE = 18; // inside this, the meter falls back
-
 export class Wanted {
-  constructor() {
-    this.stars = 0;
-    this.evading = 0; // 0..100 — reaching 100 clears the heat
-    this.hidden = false; // no police unit close by
-    this.searching = false;
-    this.escaped = false; // set true the frame an escape pays out
-  }
-
-  addStars(n) {
-    this.stars = clamp(this.stars + n, 0, 5);
-    if (this.stars > 0) this.evading = 0;
-    this.escaped = false;
-  }
-
-  clear() {
+  constructor(G) {
+    this.G = G;
     this.stars = 0;
     this.evading = 0;
-    this.searching = false;
-    this.hidden = false;
+    this.status = 'HIDDEN';
   }
-
-  // closestDist: metres to the nearest police unit. With heat on and
-  // nothing close, evading climbs (faster while driving); when a unit
-  // closes in, it falls back.
-  update(dt, closestDist, playerSpeed) {
-    this.escaped = false;
-    if (this.stars <= 0) {
+  // The response code runs one below the star count: three stars is a
+  // CODE 2 response, four stars a CODE 3, and so on.
+  get code() { return Math.max(1, this.stars - 1); }
+  addStar() {
+    this.stars = Math.min(5, this.stars + 1);
+    this.evading = 0;
+    this.status = 'IN SIGHT';
+  }
+  dropStar() {
+    if (this.stars > 0) {
+      this.stars -= 1;
       this.evading = 0;
-      this.searching = false;
-      this.hidden = false;
-      return;
+      this.G.hud?.toast('You lost them — heat down', 'good');
     }
-    this.hidden = closestDist > HIDDEN_RANGE;
-    this.searching = this.hidden;
-    if (this.hidden) {
-      this.evading += dt * (playerSpeed > 8 ? 26 : 14);
-    } else if (closestDist < CLOSE_RANGE) {
-      this.evading = Math.max(0, this.evading - dt * 30);
+  }
+  // Seen = any cruiser within 45 m or any officer within 30 m.
+  update(dt) {
+    const G = this.G;
+    if (this.stars <= 0) { this.evading = 0; this.status = 'HIDDEN'; return; }
+    const p = G.player;
+    let seen = false;
+    for (const c of G.police.cruisers) {
+      if (c.status !== 'WRECKED' && Math.hypot(c.x - p.x, c.z - p.z) < 45) { seen = true; break; }
     }
-    if (this.evading >= 100) {
-      this.evading = 100;
-      this.clear();
-      this.escaped = true; // main pays $150 + respect on this flag
+    if (!seen) {
+      for (const o of G.police.officers) {
+        if (Math.hypot(o.x - p.x, o.z - p.z) < 30) { seen = true; break; }
+      }
+    }
+    if (seen) {
+      this.status = 'IN SIGHT';
+      this.evading = Math.max(0, this.evading - 22 * dt);
+    } else {
+      this.status = 'HIDDEN';
+      this.evading = clamp(this.evading + 13 * dt, 0, 100);
+      if (this.evading >= 100) this.dropStar();
     }
   }
 }

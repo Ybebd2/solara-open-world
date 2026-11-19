@@ -1,116 +1,77 @@
-// SOLARA — missions: the 8-job chain (Lupe, Sully, Marco, Brandt,
-// Aurora). A beacon column + ground ring mark the target; mission 4 has
-// a 90 s timer. Re-authored for the @witty-meteor-32 recording-M build.
-import * as THREE from '../vendor/three.module.min.js';
-import { MISSIONS, actFor, dist2d } from './config.js';
+// SOLARA — the eight-job chain. A stage is done when Kai (on foot or in
+// his car) comes within its radius of its target; the last stage pays the
+// reward, raises the district standing and advances the chain. Mission 4
+// is a timed delivery: the clock runs, and a miss sends Kai back to the
+// pickup with the timer reset.
+import { MISSIONS, WEAPONS, clamp } from './config.js';
 
 export class Missions {
-  constructor(scene, hud, onAct) {
-    this.scene = scene;
-    this.hud = hud;
-    this.onAct = onAct || null; // fires when the act changes (title card)
-    this.lastAct = null; // act label of the last card shown
+  constructor(G) {
+    this.G = G;
+    this.list = MISSIONS;
     this.index = 0;
-    this.timer = 0; // seconds left on a timed mission (0 = none)
+    this.stage = 0;
+    this.stageT = 0;
     this.done = false;
-    this.current = MISSIONS[0];
-    // Beacon: glowing column + pulsing ring at the target.
-    const beaconMat = new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.5, depthWrite: false });
-    this.beacon = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 46, 12, 1, true), beaconMat);
-    this.beacon.position.y = 23;
-    scene.add(this.beacon);
-    this.ring = new THREE.Mesh(
-      new THREE.RingGeometry(4.5, 6.5, 28),
-      new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false })
-    );
-    this.ring.rotation.x = -Math.PI / 2;
-    this.ring.position.y = 0.12;
-    scene.add(this.ring);
-    this.placeBeacon();
+  }
+  get current() { return this.list[Math.min(this.index, this.list.length - 1)]; }
+  get currentStage() { return this.current.stages[Math.min(this.stage, this.current.stages.length - 1)]; }
+  get stageCount() { return this.current.stages.length; }
+
+  resetTimer() {
+    const s = this.currentStage;
+    this.stageT = s.time || 0;
   }
 
-  placeBeacon() {
-    const t = this.current.target;
-    this.beacon.position.set(t.x, 23, t.z);
-    this.ring.position.set(t.x, 0.12, t.z);
-  }
-
-  startMission(i) {
-    this.index = i;
-    this.current = MISSIONS[i];
-    this.timer = this.current.timer || 0;
-    this.done = false;
-    this.placeBeacon();
-    this.hud.say(this.current.say, this.current.contact);
-    this.hud.toast(`JOB ${i + 1}/8 — ${this.current.title}`);
-    // Title card, once per act: when this job opens a new act, tell the
-    // caller (main decides if it shows — never in intro, title or shots).
-    const act = actFor(i);
-    if (act.act !== this.lastAct) {
-      this.lastAct = act.act;
-      if (this.onAct) this.onAct(act);
-    }
-  }
-
-  // Returns an event: null | { type:'complete', mission } | { type:'failed' }
-  update(dt, px, pz, inCar) {
-    if (this.done || !this.current) return null;
-    const m = this.current;
-    // Timed mission: the clock runs down while the player is on the road.
-    if (m.timer) {
-      this.timer -= dt;
-      if (this.timer <= 0) {
-        this.timer = m.timer; // retry the same job
-        this.hud.say('Too slow. The gate closed — run it again.', m.contact);
-        this.hud.toast('JOB FAILED — RETRY');
-        return { type: 'failed', mission: m };
+  update(dt) {
+    if (this.done || this.G.state !== 'playing') return;
+    const G = this.G;
+    const stage = this.currentStage;
+    if (stage.time && this.stageT <= 0) this.stageT = stage.time;
+    if (stage.time) {
+      this.stageT -= dt;
+      if (this.stageT <= 0) {
+        // Out of time: back to the pickup, timer reset.
+        G.hud?.toast('Too slow — back to the pickup', 'bad');
+        this.stage = 0;
+        this.stageT = stage.time;
+        const p = G.player;
+        p.x = G.config.spawn.x; p.z = G.config.spawn.z;
+        return;
       }
     }
-    const d = dist2d(px, pz, m.target.x, m.target.z);
-    // Mission 2 (borrow a car) completes by getting into any car.
-    const reached = m.id === 2 ? inCar : d <= m.radius;
-    if (reached) {
-      const done = m;
-      this.done = true;
-      if (this.index + 1 < MISSIONS.length) {
-        this.startMission(this.index + 1);
-      } else {
-        this.current = null;
-        this.beacon.visible = false;
-        this.ring.visible = false;
-      }
-      return { type: 'complete', mission: done };
+    const pos = G.player.onFoot ? G.player : G.player.car;
+    if (!pos) return;
+    const d = Math.hypot(pos.x - stage.target.x, pos.z - stage.target.z);
+    if (d <= stage.radius) this.advance();
+  }
+
+  advance() {
+    const G = this.G;
+    const mission = this.current;
+    G.sound?.pickup();
+    if (this.stage < mission.stages.length - 1) {
+      this.stage++;
+      this.resetTimer();
+      G.hud?.toast(`${mission.ch} — stage ${this.stage + 1}/${mission.stages.length}`, 'good');
+      return;
     }
-    // Pulse the ring.
-    const s = 1 + Math.sin(performance.now() / 280) * 0.08;
-    this.ring.scale.set(s, s, 1);
-    return null;
-  }
-
-  get objective() {
-    return this.current ? this.current.objective : 'All jobs done — Solara is yours.';
-  }
-
-  // Stage display for the mission panel: the LAST band whose max
-  // distance still covers the player. Purely derived from position —
-  // it never gates completion, so teleporting to the target jumps to
-  // the final stage and the job completes exactly as before. NEXT is
-  // the next stage's text, or the next job's title on the last stage.
-  stageInfo(px, pz) {
-    if (!this.current) {
-      return { index: 1, total: 1, text: 'All jobs done — Solara is yours.', next: '' };
-    }
-    const stages = this.current.stages || [{ max: 999, text: this.current.objective }];
-    const d = dist2d(px, pz, this.current.target.x, this.current.target.z);
-    let idx = 0;
-    for (let i = 0; i < stages.length; i++) if (d <= stages[i].max) idx = i;
-    const next = idx + 1 < stages.length
-      ? stages[idx + 1].text
-      : (this.index + 1 < MISSIONS.length ? `JOB ${this.index + 2}/8 — ${MISSIONS[this.index + 1].title}` : 'Solara is yours');
-    return { index: idx + 1, total: stages.length, text: stages[idx].text, next };
-  }
-
-  get timerLeft() {
-    return this.current && this.current.timer ? Math.max(0, Math.ceil(this.timer)) : 0;
+    // Mission complete: pay out, raise standing, unlock the next weapon.
+    const r = mission.reward;
+    G.money += r.money;
+    G.respect += r.respect;
+    G.rp += r.rp;
+    const here = G.world.districtAt(G.player.x, G.player.z);
+    G.districts.addStanding(here.name, 8);
+    G.hud?.toast(`JOB DONE — +$${r.money.toLocaleString()} · +${r.respect} respect · +${r.rp} RP`, 'good');
+    G.sound?.payout();
+    const next = this.index + 1;
+    // Unlock weapons tied to the mission just finished.
+    for (const w of WEAPONS) if (w.unlockMission === next) G.player.unlockWeapon(w.slot);
+    this.index = Math.min(next, this.list.length - 1);
+    this.stage = 0;
+    this.resetTimer();
+    if (next >= this.list.length) this.done = true;
+    G.hud?.refreshMission();
   }
 }

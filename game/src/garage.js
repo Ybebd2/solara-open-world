@@ -1,35 +1,32 @@
-// SOLARA — garage: Sully's upgrade shop. Three upgrades, one purchase
-// each, paid from the run's cash. Re-authored for the
-// @witty-meteor-32 recording-M build.
-
+// SOLARA — the garage: three bolt-on upgrades for whatever Kai is
+// driving, bought with mission money. Engine raises the top speed,
+// armour plates soak damage before the car does, and brakes cut the
+// stopping distance. Nothing here is required to finish the game.
 export const UPGRADES = [
-  { id: 'engine', name: 'Tuned Engine', desc: '+15% top speed', cost: 400 },
-  { id: 'armor', name: 'Armour Plating', desc: '+40 condition, rams hurt less', cost: 350 },
-  { id: 'paint', name: 'Sunset Paint', desc: 'Gold flake, +10 respect', cost: 200 },
+  { id: 'engine', name: 'Stage 2 Engine', cost: 900, desc: '+6 m/s top speed' },
+  { id: 'armour', name: 'Armour Plating', cost: 700, desc: 'car takes half damage' },
+  { id: 'brakes', name: 'Race Brakes', cost: 500, desc: 'stops twice as fast' },
 ];
 
 export class Garage {
-  constructor() {
+  constructor(G) {
+    this.G = G;
     this.owned = new Set();
   }
-
-  list() {
-    return UPGRADES;
-  }
-
-  has(id) {
-    return this.owned.has(id);
-  }
-
-  // Buy one upgrade. Returns { ok, money } — money after the purchase,
-  // or unchanged when the upgrade is unknown, already owned, or the
-  // player cannot afford it.
-  buy(id, money) {
-    const item = UPGRADES.find((u) => u.id === id);
-    if (!item) return { ok: false, money };
-    if (this.owned.has(id)) return { ok: false, money };
-    if (money < item.cost) return { ok: false, money };
+  has(id) { return this.owned.has(id); }
+  buy(id) {
+    const u = UPGRADES.find((x) => x.id === id);
+    if (!u || this.owned.has(id)) return false;
+    if (this.G.money < u.cost) { this.G.hud?.toast('Not enough money', 'bad'); return false; }
+    this.G.money -= u.cost;
     this.owned.add(id);
-    return { ok: true, money: money - item.cost, upgrade: item };
+    this.G.hud?.toast(`Installed: ${u.name}`, 'good');
+    return true;
+  }
+  // Top speed of the car Kai is driving, with upgrades applied.
+  topSpeed() {
+    let v = 24;
+    if (this.owned.has('engine')) v += 6;
+    return v;
   }
 }

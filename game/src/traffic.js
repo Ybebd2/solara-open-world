@@ -1,173 +1,159 @@
-// SOLARA — traffic: moving cars on the road grid + parked cars at the
-// kerb + scooter riders on the beach road. NaN guard: speed is clamped
-// only for cars that HAVE a cruise speed; parked cars have cruise ===
-// undefined and must never go through Math.min(speed, undefined).
-// Re-authored for the @witty-meteor-32 recording-M build.
-import { Car, makeScooterMesh } from './vehicles.js';
-import { WORLD, BEACH_ROAD, rand, pick, clamp } from './config.js';
+// SOLARA — traffic: the cars that stream along the roads, the parked cars
+// Kai can steal, and the pedestrians on the sidewalks (one of whom flees,
+// arms out, when a carjack happens in front of them).
+import * as THREE from '../vendor/three.module.min.js';
+import { WORLD, mulberry32, clamp } from './config.js';
+import { makeCar } from './vehicles.js';
 
-// Mixed traffic: sedans, taxis, pickups, vans and a low sports car, in
-// bright varied paint — the roads read busy, not uniform. Taxis keep
-// their yellow, vans stay white.
-const TRAFFIC_TYPES = ['sedan', 'sedan', 'taxi', 'pickup', 'sports', 'van'];
-const TRAFFIC_COLORS = [0xe86a2a, 0x2fb5a8, 0x9a5fd9, 0xf2d13c, 0xe8e8e8, 0xd93a3a, 0x3f9a4a, 0x3f6fb5, 0xe89ac0, 0x8a8a8a];
+const TRAFFIC_KINDS = [
+  { kind: 'sedan', color: 0x2a5db0, name: 'Meridian' },
+  { kind: 'sedan', color: 0xc03028, name: 'Comet' },
+  { kind: 'sedan', color: 0xe8e8e8, name: 'Alba' },
+  { kind: 'sedan', color: 0x3a3a40, name: 'Nocturne' },
+  { kind: 'taxi', color: 0x2a9d8f, name: 'Taxi' },
+  { kind: 'van', color: 0xd8d8d8, name: 'Box Van' },
+  { kind: 'pickup', color: 0x2a9d8f, name: 'Flatbed' },
+  { kind: 'motorcycle', color: 0xc02020, name: 'Red Bike' },
+  { kind: 'coupe', color: 0xe86a1c, name: 'Fathom' },
+];
 
-function streetLines() {
-  const lines = [];
-  for (let s = WORLD.streetMin; s <= WORLD.streetMax; s += WORLD.streetStep) lines.push(s);
-  return lines;
+const PARKED_SPOTS = [
+  { x: -246, z: 40, heading: Math.PI, kind: 'sedan', color: 0x8a8f96, name: 'Bruto' },
+  { x: -254, z: -60, heading: 0, kind: 'sedan', color: 0x2a5db0, name: 'Meridian' },
+  { x: -246, z: 120, heading: Math.PI, kind: 'coupe', color: 0xe86a1c, name: 'Fathom' },
+  { x: -166, z: -20, heading: Math.PI / 2, kind: 'sedan', color: 0xc03028, name: 'Comet' },
+  { x: -86, z: 60, heading: -Math.PI / 2, kind: 'van', color: 0xd8d8d8, name: 'Box Van' },
+  { x: -6, z: -100, heading: Math.PI / 2, kind: 'pickup', color: 0x2a9d8f, name: 'Flatbed' },
+  { x: 74, z: 30, heading: -Math.PI / 2, kind: 'sedan', color: 0xe8e8e8, name: 'Alba' },
+  { x: 154, z: -40, heading: Math.PI / 2, kind: 'sedan', color: 0x3a3a40, name: 'Nocturne' },
+  { x: -246, z: -140, heading: 0, kind: 'taxi', color: 0x2a9d8f, name: 'Taxi' },
+  { x: -94, z: 140, heading: -Math.PI / 2, kind: 'sedan', color: 0x8a8f96, name: 'Bruto' },
+];
+
+class Ped {
+  constructor(scene, x, z) {
+    this.group = new THREE.Group();
+    const skin = new THREE.MeshLambertMaterial({ color: 0xc98d64 });
+    const shirt = new THREE.MeshLambertMaterial({ color: 0x4a7ab0 });
+    const pants = new THREE.MeshLambertMaterial({ color: 0x2a2a30 });
+    const mk = (w, h, d, mat, px, py, pz) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.set(px, py, pz); this.group.add(m); return m;
+    };
+    mk(0.22, 0.75, 0.22, pants, -0.14, 0.38, 0);
+    mk(0.22, 0.75, 0.22, pants, 0.14, 0.38, 0);
+    mk(0.62, 0.7, 0.34, shirt, 0, 1.1, 0);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), skin);
+    head.position.set(0, 1.68, 0); this.group.add(head);
+    const hair = new THREE.Mesh(new THREE.SphereGeometry(0.25, 10, 8), new THREE.MeshLambertMaterial({ color: 0x2a1a10 }));
+    hair.position.set(0, 1.76, -0.03); hair.scale.set(1, 0.7, 1); this.group.add(hair);
+    this.armL = mk(0.16, 0.62, 0.16, skin, -0.4, 1.15, 0);
+    this.armR = mk(0.16, 0.62, 0.16, skin, 0.4, 1.15, 0);
+    this.group.position.set(x, 0, z);
+    this.heading = 0;
+    this.speed = 1.2;
+    this.fleeing = false;
+    scene.add(this.group);
+  }
+  setFlee(on) {
+    this.fleeing = on;
+    this.armL.rotation.z = on ? 1.25 : 0;
+    this.armR.rotation.z = on ? -1.25 : 0;
+  }
 }
 
 export class Traffic {
-  constructor(scene) {
-    this.scene = scene;
-    this.cars = []; // all cars (moving + parked)
-    this.moving = []; // { car, cruise, axis, dir }
-    this.parked = []; // Car, cruise === undefined
-    this.scooters = []; // { mesh, z, dir, speed }
-    this.spawnMoving();
-    this.spawnParked();
-    this.spawnScooters();
-  }
-
-  spawnScooters() {
-    // Two commuters on scooters looping the beach road — street life.
-    // They ride the outer lanes, both ways.
-    for (const [z0, dir, col, sx] of [[-60, 1, 0xff5da2, BEACH_ROAD.southLeft], [80, -1, 0x39d0ff, BEACH_ROAD.northRight]]) {
-      const mesh = makeScooterMesh(col);
-      mesh.position.set(sx, 0, z0);
-      // Scooter front (lamp) is local -z: rotation PI faces south (+z),
-      // rotation 0 faces north (-z) — matching the direction of travel.
-      mesh.rotation.y = dir > 0 ? Math.PI : 0;
-      this.scene.add(mesh);
-      this.scooters.push({ mesh, z: z0, dir, speed: rand(6, 8) });
-    }
-  }
-
-  spawnMoving() {
-    const streets = streetLines();
-    for (let i = 0; i < 18; i++) {
-      const type = pick(TRAFFIC_TYPES);
-      // The first six cars are biased onto the beach road, so the
-      // boulevard reads busy in normal play, not just in staged shots.
-      const onBeach = i < 6;
-      const axis = onBeach ? 'z' : (Math.random() < 0.5 ? 'x' : 'z');
-      const line = onBeach ? BEACH_ROAD.x : pick(streets);
-      const dir = Math.random() < 0.5 ? 1 : -1;
-      // Lane offset from the street centre: 2-lane streets use ±2.2;
-      // the 4-lane beach road uses its four lane centres.
-      let lane;
-      if (line === BEACH_ROAD.x) {
-        const centres = dir > 0 ? [BEACH_ROAD.southLeft, BEACH_ROAD.southRight] : [BEACH_ROAD.northLeft, BEACH_ROAD.northRight];
-        lane = pick(centres) - BEACH_ROAD.x;
+  constructor(G) {
+    this.G = G;
+    this.cars = [];
+    this.parked = [];
+    this.peds = [];
+    this.frozen = false;
+    const rng = mulberry32(11);
+    // Moving traffic on the grid.
+    const roads = [];
+    for (const z of WORLD.crossZ) { roads.push({ alongX: true, at: z }); roads.push({ alongX: true, at: z }); }
+    for (const x of WORLD.northX) roads.push({ alongX: false, at: x });
+    roads.push({ alongX: false, at: WORLD.beachRoadX });
+    for (let i = 0; i < 14; i++) {
+      const r = roads[i % roads.length];
+      const spec = TRAFFIC_KINDS[Math.floor(rng() * TRAFFIC_KINDS.length)];
+      const car = makeCar(spec.kind, spec.color, spec.name);
+      const dir = rng() < 0.5 ? 1 : -1;
+      const lane = (rng() < 0.5 ? -3.4 : 3.4);
+      if (r.alongX) {
+        car.x = -240 + rng() * 480;
+        car.z = r.at + lane * dir;
+        car.heading = dir > 0 ? Math.PI / 2 : -Math.PI / 2;
       } else {
-        lane = dir > 0 ? 2.2 : -2.2;
+        car.x = r.at + lane * dir;
+        car.z = -240 + rng() * 480;
+        car.heading = dir > 0 ? 0 : Math.PI;
       }
-      const along = rand(-170, 170);
-      const x = axis === 'x' ? along : line + lane;
-      const z = axis === 'x' ? line + lane : along;
-      const heading = axis === 'x' ? (dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (dir > 0 ? 0 : Math.PI);
-      const paint = type === 'taxi' ? undefined : type === 'van' ? 0xe8e8e8 : pick(TRAFFIC_COLORS);
-      const car = new Car(type, x, z, heading, paint);
-      car.cruise = rand(7, 12); // defined cruise speed — only moving cars have this
-      this.scene.add(car.mesh);
+      car.speed = 8 + rng() * 6;
+      car._road = r; car._dir = dir; car._lane = lane;
+      car.mesh.position.y = 0;
+      G.scene.add(car.mesh);
       this.cars.push(car);
-      this.moving.push({ car, cruise: car.cruise, axis, dir });
     }
-  }
-
-  spawnParked() {
-    const streets = streetLines();
-    for (let i = 0; i < 16; i++) {
-      const type = pick(['sedan', 'sedan', 'pickup', 'taxi', 'sports', 'van']);
-      const axis = Math.random() < 0.5 ? 'x' : 'z';
-      // The first four park at the beach-road kerbs, so the boulevard
-      // reads lined with cars even between the moving traffic.
-      const onBeach = i < 4;
-      const line = onBeach ? BEACH_ROAD.x : pick(streets);
-      const ax = onBeach ? 'z' : axis;
-      // Kerb offset: 2-lane streets park at ±5.4; the beach road parks
-      // at its asphalt edges (±6.3 from the centre line).
-      let side = Math.random() < 0.5 ? 5.4 : -5.4;
-      if (line === BEACH_ROAD.x) side = Math.random() < 0.5 ? 6.3 : -6.3;
-      const along = rand(-165, 165);
-      const x = ax === 'x' ? along : line + side;
-      const z = ax === 'x' ? line + side : along;
-      const heading = ax === 'x' ? (side > 0 ? Math.PI / 2 : -Math.PI / 2) : (side > 0 ? 0 : Math.PI);
-      const paint = type === 'taxi' ? undefined : type === 'van' ? 0xe8e8e8 : pick(TRAFFIC_COLORS);
-      const car = new Car(type, x, z, heading, paint);
-      car.cruise = undefined; // parked: no cruise — the NaN guard relies on this
-      this.scene.add(car.mesh);
-      this.cars.push(car);
+    // Parked cars.
+    for (const s of PARKED_SPOTS) {
+      const car = makeCar(s.kind, s.color, s.name);
+      car.x = s.x; car.z = s.z; car.heading = s.heading; car.speed = 0;
+      G.scene.add(car.mesh);
       this.parked.push(car);
     }
+    // Pedestrians on the sidewalks.
+    const pedSpots = [[-240, -40], [-240, 60], [-160, 20], [-80, -30], [60, 100], [140, -60], [-240, 160], [10, -140]];
+    for (const [x, z] of pedSpots) this.peds.push(new Ped(G.scene, x, z));
   }
 
-  // Parked car at an exact spot (staged shots): type, position and
-  // heading are the caller's, cruise stays undefined (parked).
-  spawnParkedAt(type, x, z, heading) {
-    const paint = type === 'taxi' ? undefined : type === 'van' ? 0xe8e8e8 : pick(TRAFFIC_COLORS);
-    const car = new Car(type, x, z, heading, paint);
-    car.cruise = undefined;
-    this.scene.add(car.mesh);
-    this.cars.push(car);
-    this.parked.push(car);
-    return car;
-  }
-
-  update(dt) {
-    for (const m of this.moving) {
-      const c = m.car;
-      // Clamp ONLY when cruise is defined; parked cars never reach this branch.
-      if (m.cruise !== undefined) {
-        c.speed = Math.min(c.speed + 4 * dt, m.cruise);
-        c.speed = clamp(c.speed, 0, m.cruise);
-      }
-      const step = c.speed * dt * m.dir;
-      if (m.axis === 'x') {
-        c.mesh.position.x += step;
-        if (c.mesh.position.x > 175) c.mesh.position.x = -175;
-        if (c.mesh.position.x < -175) c.mesh.position.x = 175;
-      } else {
-        c.mesh.position.z += step;
-        if (c.mesh.position.z > 175) c.mesh.position.z = -175;
-        if (c.mesh.position.z < -175) c.mesh.position.z = 175;
-      }
-      // Front is local -z: rotation.y = heading + PI points the front
-      // along the direction of motion (southbound = PI, northbound = 0,
-      // eastbound = -PI/2, westbound = PI/2). Without the +PI the cars
-      // drive backwards — fronts toward the chase camera.
-      c.mesh.rotation.y = m.axis === 'x' ? (m.dir > 0 ? -Math.PI / 2 : Math.PI / 2) : (m.dir > 0 ? Math.PI : 0);
-    }
-    // Scooter riders cruise the beach road and loop at the ends.
-    for (const s of this.scooters) {
-      s.z += s.speed * dt * s.dir;
-      if (s.z > 175) { s.z = 175; s.dir = -1; s.mesh.rotation.y = 0; }
-      if (s.z < -175) { s.z = -175; s.dir = 1; s.mesh.rotation.y = Math.PI; }
-      s.mesh.position.z = s.z;
-    }
-  }
-
-  // Claim a traffic car for the player (carjack): it stops being
-  // driven by traffic — otherwise traffic.update would keep moving it
-  // under the player. It stays in this.cars (still raycastable).
-  claim(car) {
-    const i = this.moving.findIndex((m) => m.car === car);
-    if (i >= 0) this.moving.splice(i, 1);
-  }
-
-  // Nearest car (moving or parked) within maxDist of (x, z).
-  nearestCar(x, z, maxDist) {
-    let best = null, bestD = maxDist;
-    for (const c of this.cars) {
-      const dx = c.x - x, dz = c.z - z;
-      const d = Math.sqrt(dx * dx + dz * dz);
-      if (d < bestD) { bestD = d; best = c; }
+  nearestParked(x, z, maxD) {
+    let best = null, bd = maxD;
+    for (const c of this.parked) {
+      const d = Math.hypot(c.x - x, c.z - z);
+      if (d < bd) { bd = d; best = c; }
     }
     return best;
   }
 
-  setDusk(d) {
-    for (const c of this.cars) c.setDusk(d);
+  // The closest pedestrian to (x, z) starts fleeing, arms out.
+  scarePed(x, z) {
+    let best = null, bd = 30;
+    for (const p of this.peds) {
+      const d = Math.hypot(p.group.position.x - x, p.group.position.z - z);
+      if (d < bd) { bd = d; best = p; }
+    }
+    if (best) {
+      best.setFlee(true);
+      const dx = best.group.position.x - x, dz = best.group.position.z - z;
+      best.heading = Math.atan2(dx, dz);
+    }
+  }
+
+  setDusk(duskT) {
+    for (const c of this.cars) c.setDusk(duskT);
+    for (const c of this.parked) c.setDusk(duskT);
+  }
+
+  update(dt) {
+    if (this.frozen) return;
+    const B = WORLD.cityHalf;
+    for (const c of this.cars) {
+      const f = c.forward();
+      c.x += f.x * c.speed * dt;
+      c.z += f.z * c.speed * dt;
+      if (c.x > B) c.x = -B; if (c.x < -B) c.x = B;
+      if (c.z > B) c.z = -B; if (c.z < -B) c.z = B;
+    }
+    for (const p of this.peds) {
+      const sp = p.fleeing ? 3.4 : p.speed;
+      p.group.position.x += Math.sin(p.heading) * sp * dt;
+      p.group.position.z += Math.cos(p.heading) * sp * dt;
+      p.group.rotation.y = p.heading;
+      p.group.position.x = clamp(p.group.position.x, -B, B);
+      p.group.position.z = clamp(p.group.position.z, -B, B);
+      if (!p.fleeing && Math.random() < dt * 0.02) p.heading = Math.random() * Math.PI * 2;
+    }
   }
 }

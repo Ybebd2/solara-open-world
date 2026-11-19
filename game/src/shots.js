@@ -1,307 +1,279 @@
-// SOLARA — staged screenshot shots. Four compositions that prove the
-// game: Kai on foot with his weapon out, a 3-star wanted chase, a
-// vehicle detail pass at dusk, and a 4-star helicopter nightfall. The
-// game freezes its loop in shot mode (main holds the clock still) so
-// every shot is a still frame. Staging is pure geometry + HUD state:
-// shots 1–2 are Kai-first, shot 4 is sky-first; no shot is car-only.
-// Re-authored for the @witty-meteor-32 recording-M build.
-import { dist2d } from './config.js';
+// SOLARA — shot mode: the four frozen dossier renders. When the page
+// loads with ?shot=<name>, the game jumps straight to playing, the shot
+// stages its scene deterministically (positions, HUD values, police,
+// dialogue), the simulation freezes so nothing drifts, and
+// __solaraShotReady flips true once a few frames have rendered. The
+// camera is placed by hand per shot: shot 1 sits behind Kai and a little
+// to his right, so the bright pistol reads clear of his torso against the
+// road while the crosshair stays on the officer 18 m ahead.
+import * as THREE from '../vendor/three.module.min.js';
+import { clamp } from './config.js';
 
-export class ShotManager {
-  constructor(game) {
-    this.game = game;
-    // Shot 1: Kai on foot at the BEACH ROAD curb, arms in two-hand aim
-    // toward an officer 18 m north. Camera WEST of Kai, LOW (1.15 m),
-    // looking east-north — a profile view, so the bright silver pistol
-    // and BOTH extended arms read clearly at full frame. (A dead-behind
-    // camera hid the gun as a 2 px sliver behind the torso.)
-    this.s1 = {
-      camPos: [-162.3, 1.15, 5.2],
-      lookAt: [-160.2, 1.35, 28],
-      player: { x: -160, z: 10, heading: 0 }, // facing +z (north), toward the officer
-      officer: { x: -160, z: 28 },
-      clock: 17.5, // 17:30 golden hour
-      ammo: 71, // one shot fired from the 72 mag
-      missionIndex: 1, // CH.2 · BORROWED WHEELS
-      dialogue: 'Borrow my coupe, Kai. Bring her back without a scratch — or don’t come back.',
-      dialogueRole: 'FIXER · PIER SHACK',
-      reply: 'On it, Lupe. No scratch — I promise nothing.',
-      toast: 'JOB DONE — +$1,200 · +12 respect · +240 RP',
-    };
-    // Shot 2: 3★ wanted, white cruiser 3/4 toward Kai, staged PCPD rows.
-    this.s2 = {
-      camPos: [-159.5, 1.6, 40],
-      lookAt: [-160, 1.5, 48],
-      player: { x: -163, z: 44, heading: Math.PI / 2 }, // facing +x (east), toward the cruiser
-      cruiser: { x: -156.5, z: 48, heading: -2.12 },
-      officer: { x: -159, z: 46 },
-      clock: 18.1,
-      stars: 3,
-      evading: 15,
-      hidden: false,
-      stagedUnits: [
-        { name: 'PELICAN-11', dist: 39, status: 'PURSUIT' },
-        { name: 'MANTA-32', dist: 80, status: 'SEARCHING' },
-        { name: 'BARRACUDA-18', dist: 140, status: 'SEARCHING' },
-        { name: 'GECKO-25', dist: 37, status: 'WRECKED' },
-      ],
-    };
-    // Shot 3: dusk coupe, ~45° above-behind, 88 km/h, G3, dense traffic.
-    // Camera southwest of the coupe looking northeast up the beach
-    // road: front 3/4 (headlights toward the lens), cluster ahead.
-    this.s3 = {
-      camPos: [-166, 3.2, 53],
-      lookAt: [-161, 1, 61],
-      car: { x: -161.75, z: 60, heading: Math.PI - 0.3, speed: 24.4 },
-      clock: 18.5,
-    };
-    // Shot 4: heli + nightfall, 4★. Heli low (8 m) and close so it sits
-    // in the upper third BELOW the top-center PCPD panel (which would
-    // occlude its rotor), and the coupe sits in the spotlight pool
-    // directly beneath it. Camera further back so both fit the frame.
-    this.s4 = {
-      camPos: [-155, 7, 38],
-      lookAt: [-161.5, 4, 58],
-      car: { x: -163.5, z: 53, heading: Math.PI, speed: 0 },
-      clock: 19.33, // 19:20
-      stars: 4,
-      heli: { x: -163, y: 8, z: 52 },
-      stagedUnits: [
-        { name: 'PELICAN-11', dist: 42, status: 'PURSUIT' },
-        { name: 'MANTA-32', dist: 88, status: 'SEARCHING' },
-        { name: 'BARRACUDA-18', dist: 150, status: 'SEARCHING' },
-        { name: 'AIR-1', dist: 6, status: 'AIR' },
-      ],
-    };
-    this.shotMode = false;
-    this.shotIndex = 0;
-    this.shotTimer = 0;
-    this.shotReadySent = false;
-    this.shotId = null;
-  }
-
-  // Start a shot by index (from the URL ?shot= or the /shots endpoint).
-  // Dispatches to the per-shot stager, then arms the settle timer —
-  // the harness screenshots once __solaraShotReady fires.
-  startShot(i) {
-    const stages = [() => this.stage1(), () => this.stage2(), () => this.stage3(), () => this.stage4()];
-    if (i < 0 || i >= stages.length) return false;
-    this.shotMode = true;
-    this.shotIndex = i;
-    this.shotId = i + 1;
-    this.shotReadySent = false;
-    stages[i]();
-    this.shotTimer = 1200; // ms of settle before the frame is "ready"
-    return true;
-  }
-
-  // Shot settle: counts down in real ms; when it elapses, fire
-  // __solaraShotReady ONCE (guarded by shotReadySent) so the
-  // screenshot harness knows the frame is ready to capture.
-  update(dt) {
-    if (!this.shotMode || this.shotReadySent) return;
-    this.shotTimer -= dt * 1000;
-    if (this.shotTimer <= 0) {
-      this.shotReadySent = true;
-      if (typeof window !== 'undefined') {
-        window.__solaraShotReady = true;
-        window.__solaraShotId = this.shotId;
-      }
-    }
-  }
-
-  // Move a vehicle to an exact pose: snap position + heading, clear
-  // speed, rebuild the mesh transform. Used by the parked-car cluster
-  // in shots 3/4. (Car.x/z are getters on mesh.position — set the mesh,
-  // never v.x.)
-  placeVehicle(v, x, z, heading) {
-    v.heading = heading;
-    v.speed = 0;
-    if (v.mesh) v.mesh.position.set(x, 0.3, z);
-    if (v.mesh) v.mesh.rotation.y = heading + Math.PI;
-    if (v.setDusk) v.setDusk(1);
-  }
-
-  // Clear all wanted heat and police, then restore stars if given.
-  resetPolice() {
-    const p = this.game.police;
-    const g = this.game;
-    g.wanted.clear();
-    p.removeAll();
-    p.airDeployed = false;
-  }
-
-  // Hide every traffic car and scooter inside a world-space corridor —
-  // shot 1 must have NO car in frame, and the random parked/moving
-  // traffic can otherwise wander onto the beach road in the shot's
-  // view. Shot mode only; live play never calls this.
-  hideCorridor(x0, x1, z0, z1) {
-    const g = this.game;
-    for (const c of g.traffic.cars) {
-      if (c.x >= x0 && c.x <= x1 && c.z >= z0 && c.z <= z1) c.mesh.visible = false;
-    }
-    for (const s of g.traffic.scooters) {
-      const mx = s.mesh.position.x, mz = s.mesh.position.z;
-      if (mx >= x0 && mx <= x1 && mz >= z0 && mz <= z1) s.mesh.visible = false;
-    }
-  }
-
-  // A busy BEACH ROAD cluster parked just north of the shot anchor:
-  // taxi (with yellow roof sign), boxy van, single-cab pickup (flat
-  // black bed, red square taillights), red motorcycle + rider, plus
-  // two sedans — six distinct types in one frame, bumper gaps 2–4 m.
-  // `zOff` shifts the whole cluster north so every car sits in front
-  // of the shot camera (shot 3's camera is at z=57 — the unshifted
-  // cluster would be behind it). Returns { list, fleePed } — one
-  // pedestrian mid-flee, arms out.
-  clusterCars(zOff = 0) {
-    const g = this.game;
-    const list = [];
-    const slots = [
-      { type: 'taxi', x: -165.25, z: 52.0 + zOff },
-      { type: 'van', x: -161.75, z: 64.0 + zOff }, // clear of the coupe (z 58–62)
-      { type: 'pickup', x: -158.25, z: 56.0 + zOff },
-      { type: 'motorcycle', x: -154.75, z: 57.5 + zOff },
-      { type: 'sedan', x: -165.25, z: 61.0 + zOff },
-      { type: 'sedan', x: -158.25, z: 62.5 + zOff },
-    ];
-    for (const s of slots) {
-      const v = g.traffic.spawnParkedAt(s.type, s.x, s.z, Math.PI);
-      if (v) list.push(v);
-    }
-    const fleePed = g.world.addFleePed(-158, 62 + zOff);
-    return { list, fleePed };
-  }
-
-  // A parked cruiser placed so the shot camera sees it 3/4 toward Kai:
-  // heading -2.12 turns its nose toward the player at (-163, 44) — the
-  // white sedan, BLACK hood/roof, thin gold side line, RED light bar,
-  // square white headlights ON.
-  placeCruiserForShot() {
-    const g = this.game;
-    return g.police.spawnCruiserAt(-156.5, 48, -2.12);
-  }
-
-  // Shot 1: Kai on foot, pistol raised in two-hand aim. The camera sits
-  // west of Kai (x=-162.3) and low (y=1.15) looking east-north — a
-  // profile shot, so the 1.3 m bright silver pistol and both extended
-  // arms read clearly at full frame. One shot fired: VESPER 9 · 71.
-  stage1() {
-    const g = this.game, s = this.s1;
-    this.resetPolice();
-    g.wanted.clear();
-    g.player.setPos(s.player.x, s.player.z);
-    g.player.heading = s.player.heading;
-    g.player.setWeapon(2);
-    g.player.weaponAmmo = s.ammo;
-    g.player.setAim(true);
-    g.police.spawnOfficerAt(s.officer.x, s.officer.z);
-    g.missions.index = s.missionIndex;
-    g.missions.startMission(s.missionIndex);
-    g.hours = s.clock;
-    g.money = 1250;
-    g.respect = 67;
-    // No car in frame: hide any random traffic that wandered onto the
-    // beach road inside the shot's view corridor (the camera looks
-    // north up the road, so the corridor runs to z=70 — a car at z=45
-    // still shows as a teal speck on the asphalt).
-    this.hideCorridor(-172, -150, 0, 70);
-    g.hud.say(s.dialogue, 'Lupe', s.dialogueRole);
-    g.hud.reply(s.reply);
-    g.hud.toast(s.toast);
-    g.player.updateGroup();
-    g.setCamera(s.camPos, s.lookAt);
-  }
-
-  // Shot 2: wanted 3★ — the cruiser 3/4 toward Kai, PCPD rows staged,
-  // IN SIGHT red pill, EVADING 15%, minimap search circle + red edge.
-  stage2() {
-    const g = this.game, s = this.s2;
-    this.resetPolice();
-    g.player.setPos(s.player.x, s.player.z);
-    g.player.heading = s.player.heading;
-    g.player.setWeapon(2);
-    g.player.setAim(true);
-    g.wanted.stars = s.stars;
-    g.wanted.evading = s.evading;
-    g.wanted.hidden = s.hidden;
-    g.wanted.searching = true;
-    this.placeCruiserForShot();
-    g.police.spawnOfficerAt(s.officer.x, s.officer.z);
-    g.police.stagedUnits = s.stagedUnits.slice();
-    g.missions.index = 1;
-    g.missions.startMission(1);
-    g.hours = s.clock;
-    g.money = 1250;
-    g.respect = 67;
-    // Random traffic can park or drive right between the camera and Kai
-    // (a van blocked him in one render) — hide any that wandered into
-    // the sightline corridor. The cruiser and officer are police, not
-    // traffic, so they stay; cars behind Kai (z > 52) stay too.
-    this.hideCorridor(-172, -150, 36, 52);
-    // The mission-start toast would cover the 4th PCPD row — hide it.
-    g.hud.hideToast();
-    g.hud.say('They’re all over the beach road, Kai. Lose them — or lose the coupe.', 'Lupe');
-    g.player.updateGroup();
-    g.setCamera(s.camPos, s.lookAt);
-  }
-
-  // Shot 3: dusk coupe at 88 km/h, G3, 100% CONDITION, headlights ON
-  // (white squares + beam pools), taillight strip ON, traffic cluster.
-  // Camera southwest of the coupe, looking northeast up the beach
-  // road: the coupe reads big in a front 3/4 (headlights toward the
-  // lens), the cluster sits ahead of it in frame, the zebra is under
-  // the car. The coupe is angled slightly (heading π−0.3) so its
-  // long side reads across the frame.
-  stage3() {
-    const g = this.game, s = this.s3;
-    this.resetPolice();
-    g.wanted.clear();
-    const car = g.playerCar; // Kai's own coupe (player.car is null on foot)
-    this.placeVehicle(car, s.car.x, s.car.z, s.car.heading);
-    car.speed = s.car.speed;
-    car.gear = 3; // drive() never runs in shot mode — set the gear directly
-    g.player.enterCar(car);
-    g.hours = s.clock;
-    g.station = 2; // SOLARA 98.3 · Night Drive
-    g.songIdx = 0;
-    this.clusterCars(6); // just north of the coupe, in frame ahead of it
-    g.missions.index = 3;
-    g.missions.startMission(3);
-    g.hud.say('Ninety seconds, Kai. The gate does not wait.', 'Marco');
-    g.hud.hideToast();
-    g.player.updateGroup();
-    g.setCamera(s.camPos, s.lookAt);
-  }
-
-  // Shot 4: heli + nightfall, 4★. Heli at (-162, 9.5, 56) with its
-  // spotlight cone on the coupe; street lamps lit; neon on.
-  stage4() {
-    const g = this.game, s = this.s4;
-    this.resetPolice();
-    g.wanted.stars = s.stars;
-    g.wanted.evading = 0;
-    g.wanted.hidden = false;
-    g.wanted.searching = false;
-    const car = g.playerCar; // Kai's own coupe (player.car is null on foot)
-    this.placeVehicle(car, s.car.x, s.car.z, s.car.heading);
-    g.player.enterCar(car);
-    const heli = g.police.spawnHeliAt(s.heli.x, s.heli.y, s.heli.z);
-    g.police.setHeliSpot(8);
-    g.police.stagedUnits = s.stagedUnits.slice();
-    this.clusterCars();
-    g.missions.index = 7;
-    g.missions.startMission(7);
-    g.hours = s.clock;
-    g.money = 18450;
-    g.respect = 400;
-    // The mission-start toast would cover the PCPD panel — hide it.
-    g.hud.hideToast();
-    g.hud.say('The sky is full of rotors, Kai. Finish it — tonight.', 'Aurora');
-    g.player.updateGroup();
-    g.setCamera(s.camPos, s.lookAt);
-  }
-
-  // Distance helpers for the test harness.
-  static dist(a, b) { return dist2d(a.x, a.z, b.x, b.z); }
+function neonSignTexture(text, color) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 96;
+  const g = c.getContext('2d');
+  g.fillStyle = '#120a18'; g.fillRect(0, 0, 256, 96);
+  g.font = 'bold 52px Arial, sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.shadowColor = color; g.shadowBlur = 22;
+  g.fillStyle = color;
+  g.fillText(text, 128, 50);
+  g.shadowBlur = 6; g.fillStyle = '#ffffff';
+  g.fillText(text, 128, 50);
+  return new THREE.CanvasTexture(c);
 }
+
+// A freestanding neon sign on the sidewalk, facing the camera. Used in
+// shot 4 so the neon reads clearly at street level.
+function streetNeon(G, text, color, x, y, z, rotY) {
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(12, 4.5),
+    new THREE.MeshBasicMaterial({ map: neonSignTexture(text, color), transparent: true }),
+  );
+  m.position.set(x, y, z); m.rotation.y = rotY;
+  G.scene.add(m);
+  const pole = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, y, 0.3),
+    new THREE.MeshLambertMaterial({ color: 0x2a2a2a }),
+  );
+  pole.position.set(x, y / 2, z);
+  G.scene.add(pole);
+  return m;
+}
+
+function setCam(G, pos, look) {
+  G.camera.position.set(pos.x, pos.y, pos.z);
+  G.camera.lookAt(look.x, look.y, look.z);
+  G.camera.updateProjectionMatrix();
+}
+
+function hideAllCars(G) {
+  for (const c of G.traffic.cars) c.mesh.visible = false;
+  for (const c of G.traffic.parked) c.mesh.visible = false;
+  for (const c of G.police.cruisers) c.mesh.visible = false;
+}
+
+function showAllCars(G) {
+  for (const c of G.traffic.cars) c.mesh.visible = true;
+  for (const c of G.traffic.parked) c.mesh.visible = true;
+  for (const c of G.police.cruisers) c.mesh.visible = true;
+}
+
+function clearPolice(G) {
+  for (const o of [...G.police.officers]) G.police.removeOfficer(o);
+  for (const c of [...G.police.cruisers]) { G.scene.remove(c.mesh); }
+  G.police.cruisers.length = 0;
+  G.police.removeHeli();
+}
+
+function placeCruiserAt(G, name, dist, angle, status, displayDist) {
+  // angle: radians around the player (0 = north). The cruiser is placed
+  // dist metres from the player and turned to face him.
+  const p = G.player;
+  const x = p.x + Math.sin(angle) * dist;
+  const z = p.z + Math.cos(angle) * dist;
+  const c = G.police.spawnCruiser(x, z, name);
+  c.heading = Math.atan2(p.x - x, p.z - z);
+  c.status = status;
+  c.displayDist = displayDist;
+  c.speed = 0;
+  return c;
+}
+
+const SHOTS = {
+  '1-start'(G) {
+    G.hours = 17.5; G.money = 1250; G.respect = 67;
+    G.missions.index = 1; G.missions.stage = 1; G.missions.resetTimer();
+    const p = G.player;
+    p.onFoot = true; p.car = null; p.group.visible = true;
+    // Kai faces north-east up Beach Road, pistol in a two-hand aim.
+    p.x = -248; p.z = 20;
+    p.heading = Math.PI - 0.45;
+    p.group.rotation.y = p.heading;
+    p.setWeapon(2);
+    p.reserve[2] = 71;
+    p.setAimPose(true);
+    // The target officer, 18 m ahead on the aim line.
+    clearPolice(G);
+    const fx = Math.sin(p.heading), fz = Math.cos(p.heading);
+    const off = G.police.spawnOfficer(p.x + fx * 18, p.z + fz * 18, 'PCPD-01');
+    off.mesh.rotation.y = Math.atan2(-fx, -fz);
+    G.wanted.stars = 0; G.wanted.evading = 0; G.wanted.status = 'HIDDEN';
+    hideAllCars(G);
+    // No traffic in frame: peds walk the far sidewalk.
+    for (const ped of G.traffic.peds) { ped.group.position.set(180 + Math.random() * 20, 0, -120 + Math.random() * 40); ped.setFlee(false); }
+    // Camera: EAST of Kai, looking west-northwest so Kai is in profile
+    // and the pistol reads side-on, full length, clear of his torso.
+    // The officer sits upper-right, the crosshair between them.
+    setCam(G, { x: -241, y: 2.6, z: 25 }, { x: -246, y: 1.35, z: 14 });
+    G.hud.toast('JOB DONE — +$1,200 · +12 respect · +240 RP', 'good');
+  },
+
+  '2-drive'(G) {
+    G.hours = 17.5; G.money = 1250; G.respect = 67;
+    G.missions.index = 1; G.missions.stage = 1; G.missions.resetTimer();
+    const p = G.player;
+    p.onFoot = true; p.car = null; p.group.visible = true;
+    p.x = -244; p.z = 30;
+    p.heading = Math.PI - 0.5; // facing north-east, toward the cruiser
+    p.group.rotation.y = p.heading;
+    p.setWeapon(2);
+    p.reserve[2] = 71;
+    p.setAimPose(true);
+    G.wanted.stars = 3; G.wanted.evading = 15; G.wanted.status = 'IN SIGHT';
+    clearPolice(G);
+    // The four named units, all north of Kai so they sit in frame. The
+    // angle is measured from north (PI = due north); PELICAN-11 is the
+    // big one in frame, angled 3/4 toward Kai, its panel distance the
+    // spec's 39 m even though it stages closer for size.
+    const pelican = placeCruiserAt(G, 'PELICAN-11', 6, Math.PI - 0.5, 'PURSUIT', 39);
+    pelican.heading = Math.atan2(p.x - pelican.x, p.z - pelican.z) + 0.5;
+    placeCruiserAt(G, 'GECKO-25', 37, Math.PI + 0.35, 'WRECKED', 37);
+    const gecko = G.police.cruisers.find((c) => c.name === 'GECKO-25');
+    if (gecko) { gecko.mesh.rotation.z = 0.07; gecko.mesh.position.y = 0.1; }
+    placeCruiserAt(G, 'MANTA-32', 80, Math.PI, 'SEARCHING', 80);
+    placeCruiserAt(G, 'BARRACUDA-18', 140, Math.PI, 'SEARCHING', 140);
+    // The carjacked sedan beside Kai, driver's door toward him.
+    showAllCars(G);
+    const sedan = G.traffic.parked[0];
+    sedan.mesh.visible = true;
+    sedan.x = -248; sedan.z = 30; sedan.heading = Math.PI;
+    for (const c of G.traffic.parked) if (c !== sedan) c.mesh.visible = false;
+    // A traffic cluster behind the cruiser for depth.
+    const spots = [[-238, -10, 0.4], [-258, -30, -0.3], [-232, -40, 0.2]];
+    for (let i = 0; i < 3 && i < G.traffic.cars.length; i++) {
+      const c = G.traffic.cars[i];
+      c.mesh.visible = true;
+      c.x = spots[i][0]; c.z = spots[i][1]; c.heading = Math.PI + spots[i][2];
+      c.speed = 0;
+    }
+    for (let i = 3; i < G.traffic.cars.length; i++) G.traffic.cars[i].mesh.visible = false;
+    // Camera: EAST of Kai, looking north so Kai is in profile and the
+    // pistol reads side-on, full length, while the cruiser stays big.
+    setCam(G, { x: -239.7, y: 2.7, z: 34.6 }, { x: -243, y: 1.2, z: 28 });
+    G.hud.toast('Carjacked — +1 star', 'bad');
+  },
+
+  '3-mission'(G) {
+    G.hours = 18.9; G.money = 18450; G.respect = 400;
+    G.missions.index = 3; G.missions.stage = 1; G.missions.resetTimer();
+    const p = G.player;
+    // Kai drives the orange coupe. It is the parked Fathom, now his, on
+    // the zebra crossing.
+    const coupe = G.traffic.parked.find((c) => c.name === 'Fathom') || G.traffic.parked[2];
+    coupe.mesh.visible = true;
+    coupe.x = -250; coupe.z = 0; coupe.heading = Math.PI; coupe.speed = 24.44; coupe.condition = 100;
+    p.car = coupe; p.onFoot = false; p.group.visible = false;
+    p.heading = Math.PI;
+    G.radioStation = 2; // SOLARA 98.3
+    G.wanted.stars = 1; G.wanted.evading = 0; G.wanted.status = 'IN SIGHT';
+    clearPolice(G);
+    for (const c of G.traffic.parked) if (c !== coupe) c.mesh.visible = false;
+    // The traffic cluster ahead: taxi, van, pickup, red bike, two sedans.
+    const lineup = [
+      { kind: 'taxi', color: 0x2a9d8f, x: -254, z: -30 },
+      { kind: 'van', color: 0xd8d8d8, x: -242, z: -52 },
+      { kind: 'pickup', color: 0x2a9d8f, x: -254, z: -74 },
+      { kind: 'motorcycle', color: 0xc02020, x: -246, z: -18 },
+      { kind: 'sedan', color: 0x2a5db0, x: -242, z: -96 },
+      { kind: 'sedan', color: 0xc03028, x: -254, z: -118 },
+    ];
+    for (let i = 0; i < lineup.length && i < G.traffic.cars.length; i++) {
+      const c = G.traffic.cars[i];
+      c.mesh.visible = true;
+      c.x = lineup[i].x; c.z = lineup[i].z; c.heading = Math.PI; c.speed = 0;
+    }
+    for (let i = lineup.length; i < G.traffic.cars.length; i++) G.traffic.cars[i].mesh.visible = false;
+    // A pedestrian mid-flee on the east sidewalk, arms out.
+    const ped = G.traffic.peds[0];
+    ped.group.position.set(-239, 0, -14);
+    ped.group.rotation.y = Math.PI / 2;
+    ped.setFlee(true);
+    for (let i = 1; i < G.traffic.peds.length; i++) G.traffic.peds[i].group.position.set(200, 0, 200);
+    // Camera: rear three-quarter from the right, far enough to the side
+    // that the front headlight reads as well as the red taillight strip.
+    setCam(G, { x: -243, y: 2.8, z: 7 }, { x: -250, y: 1.0, z: -4 });
+    G.hud.toast('CH.4 — stage 2/2 · 90 s', 'good');
+  },
+
+  '4-chase'(G) {
+    G.hours = 19.32; G.money = 18450; G.respect = 400;
+    G.missions.index = 7; G.missions.stage = 0; G.missions.resetTimer();
+    const p = G.player;
+    // The coupe sits just east of the road centre so the centred dialogue
+    // does not cover it; the heli hangs above it.
+    const coupe = G.traffic.parked.find((c) => c.name === 'Fathom') || G.traffic.parked[2];
+    coupe.mesh.visible = true;
+    coupe.x = -244; coupe.z = 20; coupe.heading = Math.PI; coupe.speed = 12; coupe.condition = 100;
+    p.car = coupe; p.onFoot = false; p.group.visible = false;
+    p.heading = Math.PI;
+    G.radioStation = 0;
+    G.wanted.stars = 4; G.wanted.evading = 0; G.wanted.status = 'IN SIGHT';
+    clearPolice(G);
+    // The helicopter: above the road, centred in the sky over the coupe,
+    // its cone and ellipse on the road around the car.
+    const heli = G.police.spawnHeli();
+    heli.group.position.set(-250, 20, 0);
+    heli.group.scale.setScalar(1.25);
+    G.police.layoutHeli();
+    // A few cruisers in the cluster for the PCPD panel.
+    placeCruiserAt(G, 'PELICAN-11', 42, Math.PI - 0.4, 'PURSUIT', 42);
+    placeCruiserAt(G, 'MANTA-32', 88, Math.PI + 0.5, 'SEARCHING', 88);
+    placeCruiserAt(G, 'BARRACUDA-18', 150, Math.PI - 0.15, 'SEARCHING', 150);
+    for (const c of G.traffic.parked) if (c !== coupe) c.mesh.visible = false;
+    // Traffic cluster in the spotlight.
+    const spots = [[-254, -8, 0], [-244, -16, 0], [-254, -28, 0], [-243, 4, 0]];
+    for (let i = 0; i < 4 && i < G.traffic.cars.length; i++) {
+      const c = G.traffic.cars[i];
+      c.mesh.visible = true;
+      c.x = spots[i][0]; c.z = spots[i][1]; c.heading = Math.PI; c.speed = 0;
+    }
+    for (let i = 4; i < G.traffic.cars.length; i++) G.traffic.cars[i].mesh.visible = false;
+    for (const ped of G.traffic.peds) ped.group.position.set(200, 0, 200);
+    // Two street-level neon signs on the east sidewalk, facing the
+    // camera, so the neon reads clearly at full frame.
+    streetNeon(G, "MO'S", '#ff5fa2', -240, 11, -8, -0.35);
+    streetNeon(G, 'SOLARA', '#39e6c3', -262, 11, -20, 0.06);
+    // Camera: low behind the coupe, west of the road centre and looking
+    // north-east up the street, so the heli sits upper-third over the
+    // road and the east buildings' neon faces read at an angle.
+    setCam(G, { x: -258, y: 2.5, z: 44 }, { x: -244, y: 14, z: -5 });
+  },
+};
+
+export function applyShot(G, name) {
+  const fn = SHOTS[name];
+  if (!fn) return false;
+  G.shotMode = name;
+  G.traffic.frozen = true;
+  G.police.frozen = true;
+  fn(G);
+  // The beacon follows the staged mission target (otherwise it sits on
+  // the old pier target and can swallow the shot's subject). In shot mode
+  // the beacon itself is hidden — it is a gameplay aid, and its bright
+  // pillar would read as a spotlight and wash out the frame.
+  const bt = G.missions.currentStage.target;
+  G.world.beacon.beam.position.set(bt.x, 30, bt.z);
+  G.world.beacon.ring.position.set(bt.x, 0.08, bt.z);
+  G.world.beacon.beam.visible = false;
+  G.world.beacon.ring.visible = false;
+  // Let the world settle (sky, lamps, HUD) over a few frames, then flag ready.
+  G.world.update(G.hours);
+  G.traffic.setDusk(G.duskT);
+  G.hud.refreshAll();
+  let frames = 0;
+  const tick = () => {
+    frames++;
+    G.world.update(G.hours);
+    G.traffic.setDusk(G.duskT);
+    if (frames >= 6) {
+      window.__solaraShotReady = true;
+      return;
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  return true;
+}
+
+export const SHOT_NAMES = Object.keys(SHOTS);

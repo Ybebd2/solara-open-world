@@ -1,38 +1,24 @@
-// SOLARA — districts: per-district standing. Every district opens
-// NEUTRAL at 55; finishing a job inside one warms it by 8, capped at
-// 100. Standing is flavour and HUD only — it never gates a mission.
-// Re-authored for the @witty-meteor-32 recording-M build.
-import { DISTRICTS, districtAt, standingLabel } from './config.js';
-
-const OPENING = 55;
-const CEILING = 100;
+// SOLARA — district standing: every district starts NEUTRAL at 55 and
+// climbs 8 points when Kai finishes a job inside it. Standing is shown
+// on the minimap panel and gates nothing yet — it is the city's memory
+// of who Kai is.
+import { DISTRICTS } from './config.js';
 
 export class Districts {
-  constructor() {
+  constructor(G) {
+    this.G = G;
     this.standing = {};
-    for (const d of DISTRICTS) this.standing[d.name] = OPENING;
+    for (const d of DISTRICTS) this.standing[d.name] = 55;
   }
-
-  // Snapshot for the district under (x, z): name, value, label, blurb
-  // and map colour. Outside the island the fallback is DOWNTOWN.
-  info(x, z) {
-    const name = districtAt(x, z);
-    const def = DISTRICTS.find((d) => d.name === name) || DISTRICTS[3];
-    const value = this.standing[name] ?? OPENING;
-    return { name, value, label: standingLabel(value), desc: def.desc, color: def.color };
+  standingFor(name) { return this.standing[name] ?? 55; }
+  statusFor(name) {
+    const s = this.standingFor(name);
+    if (s >= 80) return 'TRUSTED';
+    if (s >= 65) return 'FRIENDLY';
+    if (s >= 40) return 'NEUTRAL';
+    return 'COLD';
   }
-
-  // Warm the district under (x, z) by `amount`, clamped at the ceiling.
-  // Called only from the mission-complete path in main.js.
-  bumpAt(x, z, amount) {
-    const name = districtAt(x, z);
-    const raised = Math.min(CEILING, (this.standing[name] ?? OPENING) + amount);
-    this.standing[name] = raised;
-    return { name, value: raised, label: standingLabel(raised) };
-  }
-
-  // Raw standing for one district by name.
-  value(name) {
-    return this.standing[name] ?? OPENING;
+  addStanding(name, amount) {
+    this.standing[name] = Math.max(0, Math.min(100, this.standingFor(name) + amount));
   }
 }
