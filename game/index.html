@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="SOLARA — an original open-world crime game: steal cars, outrun the Solara Police, and run fixer Mara's six jobs across a sun-soaked coastal city.">
 <title>SOLARA — an open-world crime game</title>
 <style>
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0b0e14; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -35,6 +36,10 @@
   .screen button.secondary { background: rgba(255,255,255,.16); color: #fff; box-shadow: none; font-size: 15px; padding: 9px 22px; }
   .hidden { display: none !important; }
   #loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; background: #0b0e14; font-size: 18px; }
+  /* Mission chain preview on the start screen */
+  .joblist { list-style: none; margin: 4px 0 0; padding: 0; font-size: 14px; color: #e8eef5; text-align: left; line-height: 1.7; }
+  .joblist li b { color: #ffb300; }
+  .joblist li span { float: right; color: #7dff9a; font-weight: 700; margin-left: 24px; }
 </style>
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.min.js" } }
@@ -44,7 +49,7 @@
 <div id="app">
   <canvas id="game"></canvas>
   <div id="hud" class="hidden">
-    <canvas id="minimap" width="380" height="380"></canvas>
+    <canvas id="minimap" width="380" height="380" role="img" aria-label="Minimap of Solara: player, traffic, police and mission marker"></canvas>
     <div id="wanted"><span class="off">★</span><span class="off">★</span><span class="off">★</span><span class="off">★</span><span class="off">★</span></div>
     <div id="objective"><div class="title">SOLARA</div><div id="objectiveText">Meet Mara at the pier.</div></div>
     <div id="cash">$0</div>
@@ -58,6 +63,14 @@
     <h1>SOLARA</h1>
     <h2>A sun-soaked city. Your rules.</h2>
     <p>You are Kai Mercer, fresh out of the county lockup and back in Solara — a coastal city of palms, chrome and bad decisions. Mara, the fixer who got you out, has work. Steal cars, outrun the Solara Police, run her jobs, and buy your way to the top of the city.</p>
+    <ul class="joblist" aria-label="Mara's jobs">
+      <li><b>1. Meet Mara</b> — the pier<span>$200</span></li>
+      <li><b>2. Borrow a Car</b> — steal wheels, bring them downtown<span>$400</span></li>
+      <li><b>3. Lose the Heat</b> — shake the police<span>$500</span></li>
+      <li><b>4. The Delivery</b> — north gate in 90 seconds<span>$800</span></li>
+      <li><b>5. The Getaway</b> — reach the beach and lose them there<span>$1,200</span></li>
+      <li><b>6. King of Solara</b> — three drops, then back to Mara<span>$2,000</span></li>
+    </ul>
     <div class="keys">WASD — move / drive &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — run &nbsp;·&nbsp; Space — jump<br>E — enter / steal a car &nbsp;·&nbsp; F — punch &nbsp;·&nbsp; Click — shoot &nbsp;·&nbsp; P — pause &nbsp;·&nbsp; M — mission list</div>
     <button id="playBtn">Start the game</button>
     <button id="continueBtn" class="secondary hidden">Continue saved game</button>

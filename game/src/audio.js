@@ -1,7 +1,9 @@
 // SOLARA — sound, synthesized with the Web Audio API. No audio files: every
 // effect is an oscillator or a noise buffer shaped in code, so the game loads
 // nothing over the network. The engine hum follows the car's speed, the siren
-// wails while the player is wanted, and the rest are one-shots.
+// wails while the player is wanted, and the rest are one-shots. Sound can be
+// muted (toggleMute) or turned down (setVolume); while muted every effect and
+// both loops stay silent.
 
 export class Sound {
   constructor() {
@@ -12,16 +14,20 @@ export class Sound {
     this.sirenOsc = null;
     this.sirenGain = null;
     this.enabled = true;
+    this.volume = 0.5;
   }
 
   // Must be called from a user gesture (the Start button).
   init() {
-    if (this.ctx) return;
+    if (this.ctx) {
+      if (this.ctx.state === 'suspended' && this.enabled) this.ctx.resume();
+      return;
+    }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     this.ctx = new AC();
     this.master = this.ctx.createGain();
-    this.master.gain.value = 0.5;
+    this.master.gain.value = this.enabled ? this.volume : 0;
     this.master.connect(this.ctx.destination);
     // Engine: a sawtooth whose pitch follows speed.
     this.engineOsc = this.ctx.createOscillator();
@@ -48,9 +54,31 @@ export class Sound {
     this.sirenTimer = 0;
   }
 
+  // Mute or unmute everything. Returns true when sound is now muted.
+  toggleMute() {
+    this.enabled = !this.enabled;
+    if (!this.ctx) return !this.enabled;
+    if (this.enabled) {
+      this.master.gain.value = this.volume;
+      if (this.ctx.state === 'suspended') this.ctx.resume();
+    } else {
+      this.master.gain.value = 0;
+      this.engineGain.gain.value = 0;
+      this.sirenGain.gain.value = 0;
+      if (this.ctx.state === 'running') this.ctx.suspend();
+    }
+    return !this.enabled;
+  }
+
+  // Master volume, 0 (silent) to 1 (full). Takes effect immediately.
+  setVolume(v) {
+    this.volume = Math.max(0, Math.min(1, v));
+    if (this.ctx && this.enabled) this.master.gain.value = this.volume;
+  }
+
   // Called every frame: engine pitch from speed, siren while wanted.
   update(dt, speed, wanted) {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.enabled) return;
     const target = speed > 0.5 ? 0.05 + Math.min(0.09, Math.abs(speed) * 0.002) : 0;
     this.engineGain.gain.value += (target - this.engineGain.gain.value) * Math.min(1, 6 * dt);
     this.engineOsc.frequency.value = 50 + Math.abs(speed) * 3.2;
@@ -65,7 +93,7 @@ export class Sound {
 
   // A short burst of filtered noise (a gunshot, a punch, a crash).
   noise(dur, freq, gain) {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.enabled) return;
     const len = Math.floor(this.ctx.sampleRate * dur);
     const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
     const data = buf.getChannelData(0);
@@ -85,7 +113,7 @@ export class Sound {
 
   // A short tone (a pickup chime, a UI click, a mission jingle).
   tone(freq, dur, gain = 0.15, type = 'sine') {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.enabled) return;
     const o = this.ctx.createOscillator();
     o.type = type;
     o.frequency.value = freq;
@@ -105,4 +133,6 @@ export class Sound {
   mission() { this.tone(523, 0.15, 0.2); setTimeout(() => this.tone(659, 0.15, 0.2), 140); setTimeout(() => this.tone(784, 0.3, 0.2), 280); }
   click() { this.tone(600, 0.06, 0.1, 'square'); }
   sirenBlip() { this.tone(950, 0.2, 0.12, 'sine'); }
+  // Busted sting: three descending notes when the police catch the player.
+  busted() { this.tone(392, 0.25, 0.2, 'triangle'); setTimeout(() => this.tone(311, 0.25, 0.2, 'triangle'), 220); setTimeout(() => this.tone(233, 0.5, 0.2, 'triangle'), 440); }
 }

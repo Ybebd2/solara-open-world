@@ -3,19 +3,27 @@
 // (game/index.html and its ES modules, three.js vendored under game/vendor/, no
 // network request). The program hands it in: it copies game/ and screenshots/
 // from beside this file to /output and writes /output/dossier.json, the summary
-// the judge reads, with the vendored make.fun library.
+// the judge reads, with the vendored make.fun library. It fails fast with a
+// clear message when the game entry point is missing, and prints a build
+// summary (dossier size, screenshot count, game file count) so a broken
+// hand-in is spotted before it is submitted.
 //
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+
+const gameEntry = join(here, 'game', 'index.html');
+if (!existsSync(gameEntry)) {
+  throw new Error(`SOLARA build failed: game entry point missing at ${gameEntry}`);
+}
 
 mkdirSync(out, { recursive: true });
 cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
@@ -32,3 +40,11 @@ writeFileSync(
     game_path_max_bytes: 1000,
   }),
 );
+
+// Build summary: dossier size, how many screenshots shipped, how many game
+// files went in — read back from what was actually written, not assumed.
+const dossierBytes = readFileSync(join(out, 'dossier.json')).length;
+const shotCount = readdirSync(join(out, 'screenshots')).filter((f) => /\.(jpe?g|png|webp)$/i.test(f)).length;
+const countFiles = (dir) => readdirSync(dir, { withFileTypes: true }).reduce(
+  (n, e) => n + (e.isDirectory() ? countFiles(join(dir, e.name)) : 1), 0);
+console.log(`SOLARA build OK: dossier ${dossierBytes} bytes, ${shotCount} screenshots, ${countFiles(join(out, 'game'))} game files -> ${out}`);

@@ -9,7 +9,8 @@ import { CONFIG } from './config.js';
 
 // Mission definitions. target is a map position; radius how close counts.
 // type: goto (reach the marker), steal (be in a stolen car), lose (clear
-// wanted), timed (reach the marker before the clock), collect (visit all
+// wanted), timed (reach the marker before the clock), escape (reach the
+// marker AND have no wanted stars when you get there), collect (visit all
 // markers), finale (visit all markers then return to Mara).
 export const MISSIONS = [
   {
@@ -52,10 +53,10 @@ export const MISSIONS = [
   {
     id: 'the-getaway',
     title: 'The Getaway',
-    text: 'The job went loud. Get to the beach with the police on your tail — and lose them there.',
+    text: 'The job went loud. Get to the beach with the police on your tail — and lose them there before the job counts.',
     target: 'beach',
     radius: 10,
-    type: 'goto',
+    type: 'escape',
     reward: 1200,
   },
   {
@@ -75,6 +76,7 @@ export class MissionManager {
     this.index = 0;
     this.done = 0;
     this.timer = 0;
+    this.elapsed = 0;
     this.collected = [];
     this.finished = false;
     this.failed = false;
@@ -84,10 +86,16 @@ export class MissionManager {
     return MISSIONS[this.index] ?? null;
   }
 
+  // Chain progress for the HUD and the pause screen: { done, total }.
+  progress() {
+    return { done: this.done, total: MISSIONS.length };
+  }
+
   start() {
     this.index = 0;
     this.done = 0;
     this.timer = 0;
+    this.elapsed = 0;
     this.collected = [];
     this.finished = false;
     this.failed = false;
@@ -109,6 +117,7 @@ export class MissionManager {
   update(dt, state) {
     const m = this.current();
     if (!m || this.finished) return null;
+    this.elapsed += dt;
     if (m.type === 'timed') {
       this.timer += dt;
       if (this.timer > m.timeLimit) {
@@ -127,7 +136,16 @@ export class MissionManager {
         if (state.inCar && state.carStolen && t && Math.hypot(p.x - t.x, p.z - t.z) < m.radius) return this.complete();
         break;
       case 'lose':
-        if (state.wantedStars === 0 && state.wasWanted) return this.complete();
+        // Normally the job ends once the stars clear after a chase. If the
+        // heat never came at all (a clean steal), the job cannot stall: after
+        // 45 quiet seconds it counts as lost anyway.
+        if (state.wantedStars === 0 && (state.wasWanted || this.elapsed > 45)) return this.complete();
+        break;
+      case 'escape':
+        // Reach the beach AND be clean when you get there — arriving with the
+        // police still on you does not count, so the player must shake them
+        // first or lose them on the sand.
+        if (t && Math.hypot(p.x - t.x, p.z - t.z) < m.radius && state.wantedStars === 0) return this.complete();
         break;
       case 'collect': {
         const next = m.collect.find((c) => !this.collected.includes(c));
@@ -151,6 +169,7 @@ export class MissionManager {
     this.done += 1;
     this.index += 1;
     this.timer = 0;
+    this.elapsed = 0;
     this.collected = [];
     this.failed = false;
     if (this.index >= MISSIONS.length) this.finished = true;
@@ -160,6 +179,7 @@ export class MissionManager {
   // Retry the current mission after a failure (keeps the chain).
   retry() {
     this.timer = 0;
+    this.elapsed = 0;
     this.failed = false;
     this.collected = [];
   }

@@ -2,7 +2,10 @@
 // the minimap draws the road grid, the buildings, the ocean, the player, the
 // traffic, the police and the mission marker, all from the live game state.
 // Wanted stars, health, cash, the objective, speed and ammo are plain DOM.
-// The start, pause and busted screens are here too.
+// The health bar changes colour with the player's condition (green, amber,
+// red) and the health label blinks while health is critical; the speedometer
+// shows REV while the car rolls backwards. The start, pause and busted
+// screens are here too.
 
 export class HUD {
   constructor() {
@@ -50,10 +53,26 @@ export class HUD {
     let obj = s.objective;
     if (s.timeLeft > 0) obj += ` — ${Math.ceil(s.timeLeft)}s left`;
     this.objectiveEl.textContent = obj;
-    this.healthFill.style.width = Math.max(0, s.health) + '%';
-    this.healthLabel.textContent = 'Health ' + Math.max(0, Math.round(s.health));
+    // Health: the bar shrinks and changes colour as the player is hurt —
+    // green while healthy, amber when wounded, red when critical — and the
+    // label blinks below 25 so a dying player cannot miss it.
+    const hp = Math.max(0, Math.round(s.health));
+    this.healthFill.style.width = hp + '%';
+    this.healthFill.style.background = hp >= 50
+      ? 'linear-gradient(90deg, #37d67a, #7dff9a)'
+      : hp >= 25
+        ? 'linear-gradient(90deg, #e0a52e, #ffd23f)'
+        : 'linear-gradient(90deg, #d63a37, #ff5a5a)';
+    this.healthLabel.textContent = 'Health ' + hp;
+    this.healthLabel.style.color = hp < 25
+      ? (Math.floor(performance.now() / 400) % 2 === 0 ? '#ff5a5a' : '#ffffff')
+      : '';
     this.ammoEl.textContent = s.inCar ? '' : `Ammo ${s.ammo} / ${s.ammoMax}`;
-    this.speedEl.textContent = s.inCar ? `${Math.round(Math.abs(s.speed) * 3.6)} km/h` : '';
+    // Speedometer: REV while the car rolls backwards, so a reverse getaway
+    // is never mistaken for driving away.
+    this.speedEl.textContent = s.inCar
+      ? `${Math.round(Math.abs(s.speed) * 3.6)} km/h${s.speed < -0.5 ? ' · REV' : ''}`
+      : '';
     this.drawMinimap(s);
   }
 
