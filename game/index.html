@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOLARA — an open-world crime game</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0c1420; font-family: 'Segoe UI', system-ui, sans-serif; color: #eef2f8; }
+  #game-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .hidden { display: none !important; }
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; font-size: 13px; }
+  .panel { background: rgba(8, 14, 26, 0.72); border: 1px solid rgba(255,255,255,0.14); border-radius: 8px; padding: 8px 10px; backdrop-filter: blur(2px); }
+  /* Mission, top-left */
+  #hud-mission { position: absolute; top: 12px; left: 12px; width: 300px; }
+  #hud-mission-title { font-size: 15px; font-weight: 800; letter-spacing: 0.06em; color: #ffd23f; }
+  #hud-mission-stage { font-size: 11px; color: #9fb4d8; letter-spacing: 0.12em; margin-top: 2px; }
+  #hud-mission-bar { display: flex; gap: 4px; margin: 6px 0; }
+  #hud-mission-bar .seg { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.18); }
+  #hud-mission-bar .seg.filled { background: linear-gradient(90deg, #ffb52e, #ff7a1a); }
+  #hud-mission-obj { font-size: 13px; line-height: 1.35; }
+  #hud-mission-next { font-size: 11px; color: #ffd9a0; margin-top: 4px; }
+  #hud-timer { display: none; margin-top: 6px; font-size: 18px; font-weight: 800; color: #ff5d5d; }
+  #hud-timer.show { display: block; }
+  /* Money / clock / stars, top-right */
+  #hud-top-right { position: absolute; top: 12px; right: 12px; text-align: right; }
+  #hud-money { font-size: 26px; font-weight: 800; color: #7dff8a; text-shadow: 0 2px 6px rgba(0,0,0,0.7); }
+  #hud-clock { font-size: 15px; font-weight: 700; color: #fff; }
+  #hud-stars { font-size: 30px; letter-spacing: 2px; line-height: 1; margin-top: 2px; text-shadow: 0 2px 6px rgba(0,0,0,0.8); }
+  #hud-stars .star-lit { color: #ffc83d; }
+  #hud-stars .star-dim { color: #5a6474; }
+  #hud-wanted-badge { display: none; margin-top: 4px; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 800; letter-spacing: 0.1em; }
+  #hud-wanted-badge.show { display: inline-block; }
+  #hud-wanted-badge.insight { background: #d92b2b; color: #fff; }
+  #hud-wanted-badge.hidden-badge { background: #2563eb; color: #fff; }
+  #hud-evade { display: none; margin-top: 4px; font-size: 12px; font-weight: 700; color: #9cc4ff; }
+  #hud-evade.show { display: block; }
+  #hud-rank-name { font-size: 13px; font-weight: 800; color: #ffd23f; letter-spacing: 0.1em; }
+  #hud-rp-bar { width: 170px; height: 6px; background: rgba(255,255,255,0.18); border-radius: 3px; margin: 3px 0 2px auto; overflow: hidden; }
+  #hud-rp-fill { height: 100%; background: linear-gradient(90deg, #ffd23f, #ff7a1a); width: 0%; }
+  #hud-rp-text { font-size: 11px; color: #c9d6ea; }
+  /* PCPD panel, top-centre */
+  #hud-pcpd { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: 320px; }
+  #hud-pcpd .pcpd-head { font-size: 13px; font-weight: 800; letter-spacing: 0.05em; color: #ff8a8a; }
+  #hud-pcpd-air { display: none; margin-top: 3px; font-size: 12px; font-weight: 800; color: #ffd23f; letter-spacing: 0.08em; }
+  #hud-pcpd-air.show { display: block; }
+  .pcpd-row { display: flex; gap: 8px; font-size: 12px; padding: 2px 0; }
+  .pcpd-name { flex: 1; font-weight: 700; }
+  .pcpd-dist { color: #9fb4d8; width: 52px; text-align: right; }
+  .pcpd-status { width: 86px; text-align: right; font-weight: 700; color: #ffb52e; }
+  .pcpd-more { font-size: 11px; color: #9fb4d8; }
+  /* Minimap + district, bottom-left */
+  #hud-bottom-left { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 10px; align-items: flex-end; }
+  #hud-minimap { border-radius: 50%; border: 2px solid rgba(255,255,255,0.5); background: rgba(10,16,28,0.85); }
+  #hud-district-box { width: 190px; }
+  #hud-district { font-size: 14px; font-weight: 800; letter-spacing: 0.08em; }
+  #hud-district-stand { display: inline-block; margin-top: 3px; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 800; }
+  #hud-district-stand.stand-wary { background: #5a6474; color: #fff; }
+  #hud-district-stand.stand-neutral { background: #2563eb; color: #fff; }
+  #hud-district-stand.stand-friendly { background: #1f9d55; color: #fff; }
+  #hud-district-desc { font-size: 11px; color: #b8c6da; margin-top: 4px; line-height: 1.3; }
+  #hud-respect { font-size: 12px; font-weight: 700; color: #ffd23f; margin-top: 4px; }
+  #hud-health-row, #hud-armour-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+  #hud-health-row .bar, #hud-armour-row .bar { flex: 1; height: 8px; background: rgba(255,255,255,0.15); border-radius: 4px; overflow: hidden; }
+  #hud-health-fill { height: 100%; background: #3ddc5f; width: 100%; }
+  #hud-armour-fill { height: 100%; background: #5aa9ff; width: 50%; }
+  #hud-health-text, #hud-armour-text { font-size: 10px; font-weight: 700; width: 74px; }
+  /* Weapons, bottom-centre-left */
+  #hud-weapons { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; }
+  .wslot { min-width: 86px; padding: 6px 8px; border-radius: 6px; background: rgba(8,14,26,0.72); border: 1px solid rgba(255,255,255,0.14); text-align: center; }
+  .wslot.active { border-color: #ff8a1a; background: rgba(255,138,26,0.25); box-shadow: 0 0 10px rgba(255,138,26,0.45); }
+  .wslot.locked { opacity: 0.45; }
+  .wslot .wkey { display: block; font-size: 10px; color: #9fb4d8; }
+  .wslot .wname { display: block; font-size: 12px; font-weight: 800; }
+  .wslot .wammo { display: block; font-size: 11px; color: #ffd23f; }
+  /* Car / radio, bottom-right */
+  #hud-bottom-right { position: absolute; right: 12px; bottom: 12px; text-align: right; width: 260px; }
+  #hud-radio { font-size: 13px; font-weight: 700; color: #7dff8a; }
+  #hud-song { font-size: 11px; color: #b8c6da; margin-top: 2px; }
+  #hud-car-name { font-size: 16px; font-weight: 800; margin-top: 6px; }
+  #hud-car-cond-bar { width: 200px; height: 7px; background: rgba(255,255,255,0.15); border-radius: 4px; margin: 4px 0 2px auto; overflow: hidden; }
+  #hud-car-cond-fill { height: 100%; background: #3ddc5f; width: 100%; }
+  #hud-car-cond { font-size: 11px; color: #9fe8a8; }
+  #hud-speed-row { display: flex; justify-content: flex-end; align-items: baseline; gap: 8px; margin-top: 4px; }
+  #hud-speed-num { font-size: 30px; font-weight: 800; }
+  #hud-speed-unit { font-size: 11px; color: #9fb4d8; }
+  #hud-gear { font-size: 13px; font-weight: 800; color: #ffd23f; background: rgba(255,210,63,0.18); padding: 2px 8px; border-radius: 4px; }
+  /* Crew bar, above weapons */
+  #hud-crew { position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; }
+  .cslot { min-width: 76px; padding: 5px 8px; border-radius: 6px; background: rgba(8,14,26,0.72); border: 1px solid rgba(255,255,255,0.14); text-align: center; }
+  .cslot.ready { border-color: #3ddc5f; }
+  .cslot.cooling { opacity: 0.6; }
+  .cslot .ckey { display: block; font-size: 10px; color: #9fb4d8; }
+  .cslot .cname { display: block; font-size: 12px; font-weight: 800; }
+  .cslot .ccd { display: block; font-size: 11px; color: #3ddc5f; font-weight: 700; }
+  /* Dialogue, bottom-centre */
+  #hud-dialogue { position: absolute; bottom: 110px; left: 50%; transform: translateX(-50%); width: 560px; display: none; align-items: flex-start; gap: 10px; }
+  #hud-dialogue.show { display: flex; }
+  #hud-portrait { width: 90px; height: 90px; border: 3px solid #ff5da2; border-radius: 6px; flex-shrink: 0; }
+  #hud-dialogue-body { flex: 1; }
+  #hud-dialogue-who { font-size: 14px; font-weight: 800; color: #ff5da2; }
+  #hud-dialogue-role { font-size: 11px; color: #9fb4d8; letter-spacing: 0.08em; }
+  #hud-dialogue-text { font-size: 14px; line-height: 1.4; margin-top: 4px; }
+  #hud-dialogue-reply { display: none; margin-top: 6px; font-size: 13px; color: #ffb52e; font-style: italic; }
+  #hud-dialogue-reply.show { display: block; }
+  /* Crosshair */
+  #hud-crosshair { position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; margin: -17px 0 0 -17px; display: none; }
+  #hud-crosshair.show { display: block; }
+  #hud-crosshair .ring { position: absolute; inset: 4px; border: 2px solid #ff3b30; border-radius: 50%; }
+  #hud-crosshair .dot { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; background: #ff3b30; border-radius: 50%; }
+  /* Prompt + toast */
+  #hud-prompt { position: absolute; bottom: 200px; left: 50%; transform: translateX(-50%); display: none; padding: 7px 14px; background: rgba(8,14,26,0.8); border: 1px solid rgba(255,255,255,0.25); border-radius: 6px; font-size: 14px; font-weight: 700; }
+  #hud-prompt.show { display: block; }
+  #hud-toast { position: absolute; top: 96px; left: 50%; transform: translateX(-50%); display: none; padding: 8px 18px; background: rgba(20,32,10,0.85); border: 1px solid #7dff8a; border-radius: 6px; font-size: 14px; font-weight: 800; color: #c9ffb0; }
+  #hud-toast.show { display: block; }
+  /* Act card */
+  #hud-actcard { position: absolute; left: 50%; top: 34%; transform: translate(-50%, -50%); display: none; text-align: center; pointer-events: auto; cursor: pointer; }
+  #hud-actcard.show { display: block; }
+  #hud-actcard-title { font-size: 44px; font-weight: 900; letter-spacing: 0.14em; color: #ffd23f; text-shadow: 0 4px 18px rgba(0,0,0,0.9); }
+  #hud-actcard-sub { font-size: 18px; letter-spacing: 0.2em; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,0.9); }
+  /* Intro + title screens */
+  .screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 20; background: linear-gradient(180deg, rgba(10,10,30,0.55), rgba(10,10,30,0.85)); text-align: center; pointer-events: auto; }
+  .screen h1 { font-size: 84px; font-weight: 900; letter-spacing: 0.18em; color: #ffd23f; text-shadow: 0 6px 30px rgba(0,0,0,0.9); }
+  .screen h2 { font-size: 20px; letter-spacing: 0.3em; color: #fff; margin-top: 6px; }
+  .screen p { font-size: 15px; color: #c9d6ea; max-width: 560px; line-height: 1.6; margin-top: 18px; }
+  .screen .hint { margin-top: 26px; font-size: 13px; color: #9fb4d8; letter-spacing: 0.12em; }
+  .screen button { margin-top: 22px; padding: 12px 34px; font-size: 17px; font-weight: 800; letter-spacing: 0.1em; color: #1a1200; background: linear-gradient(180deg, #ffd23f, #ff9a1a); border: none; border-radius: 8px; cursor: pointer; }
+  .screen button.secondary { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.35); }
+  /* Map overlay */
+  #screen-map { position: fixed; inset: 0; z-index: 15; background: rgba(6,10,20,0.88); display: flex; align-items: center; justify-content: center; gap: 18px; pointer-events: auto; }
+  #map-canvas { border: 1px solid rgba(255,255,255,0.25); border-radius: 8px; background: #0c1420; }
+  #map-side { width: 300px; color: #eef2f8; }
+  #map-side h3 { font-size: 18px; letter-spacing: 0.1em; color: #ffd23f; margin-bottom: 10px; }
+  .map-job { font-size: 13px; padding: 5px 8px; border-radius: 5px; color: #b8c6da; }
+  .map-job.current { background: rgba(255,210,63,0.2); color: #ffd23f; font-weight: 800; }
+  .map-job.done { color: #5f7d5f; text-decoration: line-through; }
+  #map-stats { font-size: 12px; color: #9fb4d8; margin-top: 12px; line-height: 1.6; }
+  #map-footer { font-size: 12px; color: #ffd9a0; margin-top: 10px; line-height: 1.5; }
+  #boot-error { position: fixed; left: 12px; bottom: 12px; z-index: 50; display: none; padding: 10px 14px; background: #7a1010; color: #fff; border-radius: 6px; font-size: 13px; }
+  #boot-error.show { display: block; }
+</style>
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+
+<div id="hud">
+  <div id="hud-mission" class="panel">
+    <div id="hud-mission-title">CH.1 · HOMECOMING</div>
+    <div id="hud-mission-stage">STAGE 1/2</div>
+    <div id="hud-mission-bar"><span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span></div>
+    <div id="hud-mission-obj">Meet Lupe at the end of the pier</div>
+    <div id="hud-mission-next"></div>
+    <div id="hud-timer"></div>
+  </div>
+
+  <div id="hud-top-right">
+    <div id="hud-money">$400</div>
+    <div id="hud-clock">17:25</div>
+    <div id="hud-stars"><span class="star-dim">☆</span><span class="star-dim">☆</span><span class="star-dim">☆</span><span class="star-dim">☆</span><span class="star-dim">☆</span></div>
+    <div><span id="hud-wanted-badge"></span></div>
+    <div id="hud-evade"></div>
+    <div id="hud-rank-name">ROOKIE</div>
+    <div id="hud-rp-bar"><div id="hud-rp-fill"></div></div>
+    <div id="hud-rp-text">0/800 RP</div>
+  </div>
+
+  <div id="hud-pcpd" class="panel hidden">
+    <div class="pcpd-head">PCPD RESPONSE — <span id="hud-pcpd-count"></span></div>
+    <div id="hud-pcpd-air">▲ AIR UNIT DEPLOYED</div>
+    <div id="hud-pcpd-list"></div>
+  </div>
+
+  <div id="hud-bottom-left">
+    <canvas id="hud-minimap" width="150" height="150"></canvas>
+    <div id="hud-district-box" class="panel">
+      <div id="hud-district">PIER</div>
+      <span id="hud-district-stand" class="stand-neutral">NEUTRAL · 55</span>
+      <div id="hud-district-desc">Lupe’s shack and the old wooden pier.</div>
+      <div id="hud-respect">RESPECT 0</div>
+      <div id="hud-health-row"><span id="hud-health-text">HEALTH 100</span><div class="bar"><div id="hud-health-fill"></div></div></div>
+      <div id="hud-armour-row"><span id="hud-armour-text">ARMOUR 50</span><div class="bar"><div id="hud-armour-fill"></div></div></div>
+    </div>
+  </div>
+
+  <div id="hud-weapons"></div>
+  <div id="hud-crew"></div>
+
+  <div id="hud-dialogue" class="panel">
+    <canvas id="hud-portrait" width="90" height="90"></canvas>
+    <div id="hud-dialogue-body">
+      <span id="hud-dialogue-who">LUPE:</span> <span id="hud-dialogue-role">FIXER · PIER SHACK</span>
+      <div id="hud-dialogue-text"></div>
+      <div id="hud-dialogue-reply"></div>
+    </div>
+  </div>
+
+  <div id="hud-crosshair"><div class="ring"></div><div class="dot"></div></div>
+  <div id="hud-prompt"></div>
+  <div id="hud-toast"></div>
+
+  <div id="hud-actcard"><div id="hud-actcard-title"></div><div id="hud-actcard-sub"></div></div>
+
+  <div id="hud-bottom-right">
+    <div id="hud-radio">♪ <span id="hud-radio-freq">PUERTO 88.3</span><span id="hud-radio-genre"> — Golden Latin</span></div>
+    <div id="hud-song"></div>
+    <div id="hud-car-name">ON FOOT</div>
+    <div id="hud-car-cond-bar"><div id="hud-car-cond-fill"></div></div>
+    <div id="hud-car-cond"></div>
+    <div id="hud-speed-row"><span id="hud-speed-num">0</span><span id="hud-speed-unit">km/h</span><span id="hud-gear"></span></div>
+  </div>
+</div>
+
+<div id="screen-intro" class="screen">
+  <h1>SOLARA</h1>
+  <h2>AN OPEN-WORLD CRIME GAME</h2>
+  <p>Kai Mercer is back in Solara. Eight jobs stand between him and the top of the city — steal the cars, outrun the PCPD, and don't let the helicopter catch you at three stars.</p>
+  <div class="hint">PRESS ANY KEY TO CONTINUE</div>
+</div>
+
+<div id="screen-title" class="screen hidden">
+  <h1>SOLARA</h1>
+  <h2>AN OPEN-WORLD CRIME GAME</h2>
+  <p>WASD drive &amp; walk · F enter / carjack · Click or Space shoot · R radio · M map · Z / X / C crew · P pause</p>
+  <button id="title-start">START GAME</button>
+  <button id="title-continue" class="secondary">CONTINUE (LOAD SAVE)</button>
+</div>
+
+<div id="screen-map" class="hidden">
+  <canvas id="map-canvas" width="520" height="380"></canvas>
+  <div id="map-side">
+    <h3>SOLARA — CITY MAP</h3>
+    <div id="map-missions"></div>
+    <div id="map-stats"></div>
+    <div id="map-footer"></div>
+    <div class="hint" style="margin-top:14px">M / ESC — close · Wheel — zoom · Drag — pan · Click — waypoint</div>
+  </div>
+</div>
+
+<div id="boot-error"></div>
+
+<script type="module" src="./main.ts"></script>
+</body>
+</html>
