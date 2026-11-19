@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOLARA — an open-world crime game</title>
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0b0e14; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #app { position: fixed; inset: 0; }
+  canvas#game { display: block; width: 100%; height: 100%; }
+  /* HUD */
+  #hud { position: absolute; inset: 0; pointer-events: none; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+  #minimap { position: absolute; top: 14px; right: 14px; width: 190px; height: 190px; border-radius: 50%; border: 3px solid rgba(255,255,255,.85); box-shadow: 0 2px 10px rgba(0,0,0,.5); background: #1c2733; }
+  #wanted { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); font-size: 30px; letter-spacing: 4px; color: #ffd23f; }
+  #wanted .off { color: rgba(255,255,255,.25); }
+  #cash { position: absolute; top: 220px; right: 18px; font-size: 22px; font-weight: 700; color: #7dff9a; text-align: right; }
+  #objective { position: absolute; top: 14px; left: 14px; max-width: 340px; background: rgba(0,0,0,.55); border-left: 4px solid #ffb300; padding: 10px 12px; border-radius: 6px; font-size: 15px; line-height: 1.4; }
+  #objective .title { font-weight: 700; color: #ffb300; margin-bottom: 2px; }
+  #health { position: absolute; bottom: 18px; left: 14px; width: 240px; }
+  #health .bar { height: 14px; background: rgba(0,0,0,.6); border-radius: 7px; overflow: hidden; border: 1px solid rgba(255,255,255,.5); }
+  #health .fill { height: 100%; width: 100%; background: linear-gradient(90deg, #37d67a, #7dff9a); }
+  #health .label { font-size: 13px; margin-top: 4px; }
+  #ammo { position: absolute; bottom: 18px; right: 18px; font-size: 20px; font-weight: 700; text-align: right; }
+  #speed { position: absolute; bottom: 64px; right: 18px; font-size: 15px; text-align: right; color: #cfe8ff; }
+  #toast { position: absolute; bottom: 110px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.65); padding: 8px 16px; border-radius: 20px; font-size: 15px; opacity: 0; transition: opacity .3s; white-space: nowrap; }
+  #hint { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); font-size: 13px; color: rgba(255,255,255,.85); background: rgba(0,0,0,.45); padding: 6px 12px; border-radius: 14px; white-space: nowrap; }
+  /* Screens */
+  .screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(180deg, rgba(10,14,22,.25), rgba(10,14,22,.82)); color: #fff; text-align: center; pointer-events: auto; }
+  .screen h1 { font-size: 64px; margin: 0 0 6px; letter-spacing: 6px; color: #ffb300; text-shadow: 0 4px 24px rgba(255,179,0,.45); }
+  .screen h2 { font-size: 20px; font-weight: 400; margin: 0 0 18px; color: #ffe9b0; }
+  .screen p { max-width: 560px; line-height: 1.55; font-size: 15px; color: #e8eef5; margin: 6px 0; }
+  .screen .keys { font-size: 14px; color: #cfe8ff; background: rgba(0,0,0,.45); border-radius: 8px; padding: 10px 16px; margin: 14px 0; line-height: 1.8; }
+  .screen button { pointer-events: auto; cursor: pointer; font-size: 19px; font-weight: 700; color: #1a1200; background: #ffb300; border: none; border-radius: 10px; padding: 13px 34px; margin-top: 10px; box-shadow: 0 4px 18px rgba(255,179,0,.4); }
+  .screen button:hover { background: #ffc63d; }
+  .screen button.secondary { background: rgba(255,255,255,.16); color: #fff; box-shadow: none; font-size: 15px; padding: 9px 22px; }
+  .hidden { display: none !important; }
+  #loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; background: #0b0e14; font-size: 18px; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+  <div id="hud" class="hidden">
+    <canvas id="minimap" width="380" height="380"></canvas>
+    <div id="wanted"><span class="off">★</span><span class="off">★</span><span class="off">★</span><span class="off">★</span><span class="off">★</span></div>
+    <div id="objective"><div class="title">SOLARA</div><div id="objectiveText">Meet Mara at the pier.</div></div>
+    <div id="cash">$0</div>
+    <div id="health"><div class="bar"><div class="fill" id="healthFill"></div></div><div class="label" id="healthLabel">Health 100</div></div>
+    <div id="speed"></div>
+    <div id="ammo"></div>
+    <div id="toast"></div>
+    <div id="hint">WASD move &nbsp;·&nbsp; Shift run &nbsp;·&nbsp; E enter car &nbsp;·&nbsp; F punch &nbsp;·&nbsp; Click shoot &nbsp;·&nbsp; M mission</div>
+  </div>
+  <div id="startScreen" class="screen">
+    <h1>SOLARA</h1>
+    <h2>A sun-soaked city. Your rules.</h2>
+    <p>You are Kai Mercer, fresh out of the county lockup and back in Solara — a coastal city of palms, chrome and bad decisions. Mara, the fixer who got you out, has work. Steal cars, outrun the Solara Police, run her jobs, and buy your way to the top of the city.</p>
+    <div class="keys">WASD — move / drive &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — run &nbsp;·&nbsp; Space — jump<br>E — enter / steal a car &nbsp;·&nbsp; F — punch &nbsp;·&nbsp; Click — shoot &nbsp;·&nbsp; P — pause &nbsp;·&nbsp; M — mission list</div>
+    <button id="playBtn">Start the game</button>
+    <button id="continueBtn" class="secondary hidden">Continue saved game</button>
+    <p style="font-size:13px;color:#9fb4c8">Best with keyboard and mouse. Your progress saves in this browser.</p>
+  </div>
+  <div id="pauseScreen" class="screen hidden">
+    <h1 style="font-size:44px">PAUSED</h1>
+    <p id="pauseStats">Cash $0 · Missions 0/6</p>
+    <button id="resumeBtn">Resume</button>
+    <button id="restartBtn" class="secondary">Restart from save</button>
+  </div>
+  <div id="overScreen" class="screen hidden">
+    <h1 style="font-size:44px;color:#ff5a5a">BUSTED</h1>
+    <p id="overText">The Solara Police caught up with you.</p>
+    <button id="retryBtn">Try again</button>
+  </div>
+  <div id="loading">Loading Solara…</div>
+</div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
