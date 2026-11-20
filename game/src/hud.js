@@ -35,10 +35,11 @@ export class HUD {
       #mission .bar i{flex:1;height:6px;background:#3a4356;border-radius:3px}
       #mission .bar i.on{background:#f2a71b}
       #mission .next{font-size:12.5px;color:#e8ecf1;line-height:1.35}
+      #mission .timer{font-size:20px;font-weight:800;color:#ffd700;margin-top:4px}
       #topright{position:absolute;top:14px;right:14px;text-align:right}
       #money{color:#7dff9e;font-size:26px;font-weight:800;text-shadow:0 2px 6px #000}
       #clock{font-size:15px;color:#e8ecf1}
-      #stars{font-size:30px;letter-spacing:2px;line-height:1.1}
+      #stars{font-size:38px;letter-spacing:3px;line-height:1.1}
       #stars .on{color:#ffd700;text-shadow:0 0 8px #ffbf00}
       #stars .off{color:#4a5568}
       #clean{font-size:11px;color:#9fb3c8}
@@ -98,6 +99,7 @@ export class HUD {
     this.mBar = el('div', 'bar', m);
     for (let i = 0; i < 4; i++) el('i', '', this.mBar);
     this.mNext = el('div', 'next', m);
+    this.mTimer = el('div', 'timer', m);
 
     // Money / clock / stars.
     const tr = el('div', '', hud); tr.id = 'topright';
@@ -215,6 +217,14 @@ export class HUD {
     const bars = this.mBar.querySelectorAll('i');
     bars.forEach((b, i) => { b.className = i < g.missions.stage ? 'on' : ''; });
     this.mNext.textContent = `NEXT: ${m.giver} — ${m.next}`;
+    // Timed job (TIDE RUNNER): the 90 s clock, big and gold.
+    if (m.timed) {
+      const t = Math.max(0, Math.ceil(g.missions.timer));
+      this.mTimer.textContent = `⏱ ${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+      this.mTimer.style.display = 'block';
+    } else {
+      this.mTimer.style.display = 'none';
+    }
 
     // Money / clock / stars.
     this.moneyEl.textContent = `$${g.money.toLocaleString()}`;

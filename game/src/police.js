@@ -83,12 +83,23 @@ export class Police {
   spawnHeli(px, pz) {
     if (this.heli) return this.heli;
     const g = new THREE.Group();
-    const body = box(4.2, 1.6, 2.2, lam(0x2c3e50));
+    // White police heli with a navy stripe: the old dark-navy body
+    // vanished against the dusk sky in shot 4.
+    const body = box(4.2, 1.6, 2.2, lam(0xf5f5f0));
     body.position.y = 0;
     g.add(body);
-    const tail = box(4.5, 0.7, 0.7, lam(0x2c3e50));
+    const stripe = box(4.3, 0.5, 2.25, lam(0x1a3a5c));
+    stripe.position.y = -0.3;
+    g.add(stripe);
+    const glass = box(1.2, 0.9, 2.0, lam(0x0e1a26));
+    glass.position.set(2.0, 0.2, 0);
+    g.add(glass);
+    const tail = box(4.5, 0.7, 0.7, lam(0xf5f5f0));
     tail.position.set(-4.2, 0.3, 0);
     g.add(tail);
+    const tailStripe = box(4.5, 0.22, 0.72, lam(0x1a3a5c));
+    tailStripe.position.set(-4.2, 0.1, 0);
+    g.add(tailStripe);
     const skidL = box(3.4, 0.15, 0.3, lam(0x111111));
     skidL.position.set(0, -1.2, 0.9);
     g.add(skidL);
@@ -98,26 +109,28 @@ export class Police {
     // Rotor disc + blur ring.
     const rotor = new THREE.Mesh(
       new THREE.CylinderGeometry(5.2, 5.2, 0.08, 24),
-      new THREE.MeshBasicMaterial({ color: 0xaaaaaa, transparent: true, opacity: 0.35 })
+      new THREE.MeshBasicMaterial({ color: 0xaaaaaa, transparent: true, opacity: 0.45 })
     );
     rotor.position.y = 1.1;
     g.add(rotor);
     this.heliRotor = rotor;
     const ring = new THREE.Mesh(
       new THREE.TorusGeometry(5.2, 0.18, 6, 32),
-      new THREE.MeshBasicMaterial({ color: 0xdddddd, transparent: true, opacity: 0.3 })
+      new THREE.MeshBasicMaterial({ color: 0xdddddd, transparent: true, opacity: 0.45 })
     );
     ring.rotation.x = Math.PI / 2;
     ring.position.y = 1.1;
     g.add(ring);
     // Pale-yellow spotlight cone (no washout — soft, narrow).
+    // Apex at the heli, widening down to the street: no rotation, so
+    // the cone narrows UP toward the helicopter (the old flipped cone
+    // read as an inverted funnel, wide at the sky).
     const coneGeo = new THREE.ConeGeometry(7, 50, 20, 1, true);
     const coneMat = new THREE.MeshBasicMaterial({
-      color: 0xfff2b0, transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthWrite: false,
+      color: 0xfff2b0, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false,
     });
     const cone = new THREE.Mesh(coneGeo, coneMat);
     cone.position.y = -25;
-    cone.rotation.x = Math.PI;
     g.add(cone);
     // Ground ellipse where the spotlight lands (~3 car-widths).
     const ellipse = new THREE.Mesh(

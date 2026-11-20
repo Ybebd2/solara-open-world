@@ -120,10 +120,14 @@ export function stageShot(game, name) {
 
   if (name === '1-start') {
     // Kai on foot on Beach Road, pistol raised, Lupe on the radio.
+    // Camera NORTH of Kai looking SOUTH, so the beach, umbrellas and
+    // ocean sit behind him (the old north-facing camera showed only
+    // blank building backs). Kai faces WEST in left profile to the
+    // north camera, pistol level toward the target ped and the coupe.
     setMission(g, 1, 2, 800, 10);
     g.hours = shotHours(17, 53);
     g.player.group.position.set(-70, 0, 14);
-    g.player.yaw = -Math.PI / 2; // facing west, side profile
+    g.player.yaw = -Math.PI / 2; // facing west, left profile to camera
     g.player.group.rotation.y = g.player.yaw;
     g.player.group.visible = true;
     g.player.onFoot = true;
@@ -134,20 +138,31 @@ export function stageShot(game, name) {
       'Borrowed wheels, Kai. The coupe sits on Beach Road — bring it back clean.',
       'On it. Nobody even sees me coming.');
     g.hud.toast('+$1,200 · +12 RESPECT');
-    // Target ped 15 m west (out of frame at this camera distance).
+    // The orange coupe, parked on the south sidewalk in frame left.
+    const coupe = g.traffic.parked[0];
+    coupe.x = -80; coupe.z = 12; coupe.dir = Math.PI;
+    coupe.sync();
+    // Target ped 15 m west, in frame left.
     makePed(g.scene, -85, 14, { color: 0x7fb3d5, yaw: Math.PI / 2 });
-    // Jogger + dog on the beach side, in frame left.
-    makePed(g.scene, -88, 6, { color: 0x2ee6c8, yaw: -Math.PI / 2 });
-    makeDog(g.scene, -85.5, 8);
-    // Side profile from the south, Kai lower-third, full body.
-    g.camera.position.set(-70, 2.4, 21.5);
-    g.camera.lookAt(-70, 1.35, 14);
+    // Jogger + dog on the far side of the road, in frame right.
+    makePed(g.scene, -58, 30, { color: 0x2ee6c8, yaw: -Math.PI / 2 });
+    makeDog(g.scene, -55.5, 32);
+    // Two beach peds on the sand, small against the ocean.
+    makePed(g.scene, -80, 106, { color: 0xf2c14e, yaw: 0 });
+    makePed(g.scene, -62, 110, { color: 0xe86a1f, yaw: Math.PI });
+    // North of Kai looking south: Kai ~30% of frame height, beach +
+    // umbrellas + ocean horizon behind him.
+    g.camera.position.set(-67, 2.2, 8);
+    g.camera.lookAt(-72, 1.3, 14);
   } else if (name === '2-drive') {
     // Three stars, four PCPD units, hero cruiser three-quarter to camera.
+    // Reframed tight: the old camera sat 52 m from Kai and he read as
+    // a dot. Now the cruiser sits 10 m from Kai and the camera 22 m
+    // from Kai, so both read large in frame.
     setMission(g, 1, 2, 800, 10);
     g.hours = shotHours(18, 23);
     g.player.group.position.set(40, 0, 0);
-    g.player.yaw = Math.PI / 2;
+    g.player.yaw = -Math.PI / 2; // facing west, toward the cruiser
     g.player.group.rotation.y = g.player.yaw;
     g.player.group.visible = true;
     g.player.onFoot = true;
@@ -156,25 +171,24 @@ export function stageShot(game, name) {
     g.wanted.stars = 3;
     g.wanted.evading = 15;
     g.wanted.inSight = true;
-    // Hero cruiser 39 m west of the player on the road; camera 13 m
-    // west of it, so the cruiser reads ~20% width and Kai sits beyond it.
-    const hero = placeCruiser(g, 'PELICAN-11', 39, 'PURSUIT', { pos: { x: 1, z: 0 } });
-    // Face the camera (south-west of the cruiser) for a front three-quarter.
-    hero.dir = Math.atan2(-(6 - 0), (-12 - 1));
+    // Hero cruiser 10 m west of the player; faces the camera.
+    const hero = placeCruiser(g, 'PELICAN-11', 10, 'PURSUIT', { pos: { x: 30, z: 0 } });
+    // Face the camera: visual yaw atan2(-dz, dx) toward (18, 9).
+    hero.dir = Math.atan2(-(9 - 0), (18 - 30));
     hero.sync();
-    placeCruiser(g, 'MANTA-32', 80, 'SEARCHING', { pos: { x: 120, z: 3 } });
-    placeCruiser(g, 'BARRACUDA-18', 140, 'SEARCHING', { pos: { x: -100, z: -3 } });
-    placeCruiser(g, 'GECKO-25', 37, 'WRECKED', { pos: { x: 40, z: -37 } });
+    placeCruiser(g, 'MANTA-32', 30, 'SEARCHING', { pos: { x: 70, z: 3 } });
+    placeCruiser(g, 'BARRACUDA-18', 55, 'SEARCHING', { pos: { x: 95, z: -3 } });
+    placeCruiser(g, 'GECKO-25', 13, 'WRECKED', { pos: { x: 52, z: -6 } });
     // Red motorcycle + rider near the zebra, two fleeing peds.
     const moto = makeCar('motorcycle', { x: 48, z: 3, dir: 0 });
     g.scene.add(moto.mesh);
-    makePed(g.scene, 30, 14, { flee: true, color: 0xf2c14e, yaw: Math.PI });
-    makePed(g.scene, 50, 14, { flee: true, color: 0xa569bd, yaw: 0 });
+    makePed(g.scene, 34, -12, { flee: true, color: 0xf2c14e, yaw: Math.PI });
+    makePed(g.scene, 46, -12, { flee: true, color: 0xa569bd, yaw: 0 });
     g.hud.setDialogue('Lupe', 'FIXER · PIER SHACK',
       'PCPD is on you. Lose them before the pier.',
       'They\'ll have to catch me first.');
-    g.camera.position.set(-12, 3.5, 6);
-    g.camera.lookAt(12, 1.2, 0);
+    g.camera.position.set(20, 3.0, 8.5);
+    g.camera.lookAt(33, 1.2, 0);
   } else if (name === '3-mission') {
     // The orange coupe at dusk, traffic clustered around a zebra.
     setMission(g, 2, 2, 2000, 22);
@@ -230,15 +244,20 @@ export function stageShot(game, name) {
     g.camera.lookAt(36, 0, -2);
   } else if (name === '4-chase') {
     // Four stars, helicopter overhead, neon and nightfall.
+    // Reframed WEST onto the neon block: the old camera looked down
+    // an empty street and the MO'S / SOLARA signs sat 120 m out of
+    // frame. Now the coupe sits under the neon, the heli is big in the
+    // upper third, and two cruisers fill the PCPD panel (no more
+    // "0 UNITS" beside 4 stars).
     setMission(g, 3, 3, 3100, 36);
     g.hours = shotHours(19, 19);
     g.radioIdx = 0; // PUERTO 88.3
     g.missions.timer = 90;
-    // Player in the coupe on the road at (-10,-3), heading west to neon.
+    // Player in the coupe on the road at (-70,-3), heading west to neon.
     const coupe = g.traffic.parked[0];
     const pi = g.traffic.parked.indexOf(coupe);
     if (pi >= 0) g.traffic.parked.splice(pi, 1);
-    coupe.x = -10; coupe.z = -3; coupe.dir = Math.PI;
+    coupe.x = -70; coupe.z = -3; coupe.dir = Math.PI;
     coupe.speed = 65 / 3.6;
     coupe.condition = 82;
     coupe.sync();
@@ -250,24 +269,39 @@ export function stageShot(game, name) {
     g.wanted.stars = 4;
     g.wanted.evading = 22;
     g.wanted.inSight = true;
-    // Helicopter overhead: spawn then drop to (-40, 25, -30) so it sits
-    // in the upper-third with rotor disc + spotlight cone visible.
-    g.police.spawnHeli(-40, -30);
-    g.police.heli.group.position.set(-40, 25, -30);
-    g.police.heli.x = -40;
-    g.police.heli.z = -30;
+    // Two cruisers on the player's tail.
+    const c1 = placeCruiser(g, 'PELICAN-11', 15, 'PURSUIT', { pos: { x: -84, z: 3 } });
+    c1.dir = Math.PI; c1.sync();
+    placeCruiser(g, 'MANTA-32', 31, 'SEARCHING', { pos: { x: -100, z: -8 } });
+    // Helicopter overhead, closer and lower than before: fuselage
+    // upper-third, rotor disc + spotlight cone visible. Placed LEFT
+    // of the view axis so the PCPD panel (top-centre) does not hide it.
+    g.police.spawnHeli(-98, -14);
+    g.police.heli.group.position.set(-98, 17, -14);
+    g.police.heli.x = -98;
+    g.police.heli.z = -14;
+    // The spotlight ground ellipse is built for the 55 m patrol height;
+    // at the staged 17 m it would sit underground — drop it to the road.
+    for (const child of g.police.heli.group.children) {
+      if (child.geometry && child.geometry.type === 'CircleGeometry') {
+        child.position.y = -16.9;
+      }
+    }
     g.hud.setDialogue('Marco', 'DRIVER · NORTH GATE',
       'Ninety seconds, Kai. The tide waits for no one.',
       'Then I\'d better fly.');
-    // Low behind the coupe, ON THE ROAD clear of the palm rows (z=±18),
-    // looking up the street at the neon and the heli. Low camera (y=2)
-    // so the coupe sits mid-frame, clear of the dialogue panel, while
-    // the heli stays in the upper third.
-    g.camera.position.set(2, 2, 8);
-    g.camera.lookAt(-30, 6, -18);
+    // Low behind the coupe, looking west up the street at the neon
+    // (MO'S at -120, SOLARA at -100) and the heli above it.
+    g.camera.position.set(-58, 2.5, 8);
+    g.camera.lookAt(-95, 7, -25);
   } else {
     throw new Error(`unknown shot: ${name}`);
   }
+
+  // Hide the mission beacon + ground ring in shot mode: the 40 m
+  // yellow pillar reads as a stray light shaft in a frozen frame.
+  g.missions.beacon.visible = false;
+  g.missions.ring.visible = false;
 
   // District from the staged position (the frozen loop never runs it).
   g.districts.update(g.player.x, g.player.z);

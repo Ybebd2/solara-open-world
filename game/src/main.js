@@ -319,9 +319,13 @@ export class Game {
     }
     if (this.state !== 'playing') return;
 
-    // Movement.
+    // Movement. camYaw is the CAMERA yaw: the chase camera sits
+    // behind the player (back = yaw + PI), so the camera's forward is
+    // the player's facing — camYaw must be yaw + PI. (The old code
+    // assigned camYaw = yaw, which flips the W direction every frame:
+    // the player vibrated ±0.3 m and never actually walked.)
     this.player.move(this.keys, dt, this.camYaw);
-    this.camYaw = this.player.yaw;
+    this.camYaw = this.player.yaw + Math.PI;
 
     // Systems.
     this.traffic.update(dt, this.duskT);

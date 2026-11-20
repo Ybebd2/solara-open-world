@@ -111,6 +111,7 @@ export class World {
       trim.position.set(x, h + 0.4, z);
       s.add(trim);
       // Lit windows: warm yellow emissive planes, glow at dusk.
+      // Both faces — shot 1 looks at the city from the beach side.
       const winMat = new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.25 });
       this.windows.push(winMat);
       const cols = Math.max(2, Math.floor(w / 6));
@@ -121,6 +122,10 @@ export class World {
           const win = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 2.6), winMat);
           win.position.set(x - w / 2 + 3 + c * (w - 6) / Math.max(1, cols - 1), 3 + r * 5, z + 8.05);
           s.add(win);
+          const winB = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 2.6), winMat);
+          winB.position.set(x - w / 2 + 3 + c * (w - 6) / Math.max(1, cols - 1), 3 + r * 5, z - 8.05);
+          winB.rotation.y = Math.PI;
+          s.add(winB);
         }
       }
     }
@@ -129,17 +134,32 @@ export class World {
 
   storefronts() {
     const s = this.scene;
-    // Neon signs with halo glow. MO'S + SOLARA (pink + teal) on the pier
-    // block, plus the new pawn-shop and diner signs, and a motel neon.
+    // Neon signs with READABLE text: a canvas texture (glowing letters
+    // on a dark backing) instead of a solid colour slab — the old slabs
+    // read as blank rectangles in the screenshots.
     const signs = [
-      { text: "MO'S", x: -120, y: 12, z: -31, color: PALETTE.neonPink, w: 12 },
-      { text: 'SOLARA', x: -100, y: 16, z: -31, color: PALETTE.neonTeal, w: 18 },
-      { text: 'PAWN', x: 20, y: 10, z: -31, color: 0xffb347, w: 9 },
-      { text: 'DINER', x: 60, y: 11, z: -31, color: 0xff6b6b, w: 11 },
-      { text: 'MOTEL', x: 200, y: 13, z: -31, color: 0x9b59b6, w: 11 },
+      { text: "MO'S", x: -120, y: 12, z: -31, color: '#ff4fa3', w: 12 },
+      { text: 'SOLARA', x: -100, y: 16, z: -31, color: '#2ee6c8', w: 18 },
+      { text: 'PAWN', x: 20, y: 10, z: -31, color: '#ffb347', w: 9 },
+      { text: 'DINER', x: 60, y: 11, z: -31, color: '#ff6b6b', w: 11 },
+      { text: 'MOTEL', x: 200, y: 13, z: -31, color: '#c77dff', w: 11 },
     ];
     for (const sg of signs) {
-      const mat = new THREE.MeshBasicMaterial({ color: sg.color, transparent: true, opacity: 0.9 });
+      const cv = document.createElement('canvas');
+      cv.width = 512; cv.height = 128;
+      const cx = cv.getContext('2d');
+      cx.clearRect(0, 0, 512, 128);
+      cx.font = 'bold 82px Arial, sans-serif';
+      cx.textAlign = 'center'; cx.textBaseline = 'middle';
+      cx.shadowColor = sg.color; cx.shadowBlur = 30;
+      cx.fillStyle = sg.color;
+      cx.fillText(sg.text, 256, 68);
+      cx.fillText(sg.text, 256, 68);
+      cx.shadowBlur = 6;
+      cx.fillStyle = '#ffffff';
+      cx.fillText(sg.text, 256, 68);
+      const tex = new THREE.CanvasTexture(cv);
+      const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.95 });
       this.neonMats.push(mat);
       const panel = new THREE.Mesh(new THREE.PlaneGeometry(sg.w, 3.2), mat);
       panel.position.set(sg.x, sg.y, sg.z);
@@ -288,6 +308,23 @@ export class World {
     towel.position.set(-96, 0.1, 114);
     towel.rotation.y = 0.5;
     s.add(towel);
+    // Two more umbrellas + towels closer to Beach Road, in shot 1's
+    // south-facing frame (the old single umbrella sat 100 m out).
+    for (const [ux, uz, col] of [[-84, 104, 0xe63946], [-56, 108, 0xf2c14e]]) {
+      const u2 = new THREE.Group();
+      const p2 = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 3, 6), lam(0xdddddd));
+      p2.position.y = 1.5;
+      u2.add(p2);
+      const c2 = new THREE.Mesh(new THREE.ConeGeometry(2.6, 1.1, 8), lam(col));
+      c2.position.y = 3.2;
+      u2.add(c2);
+      u2.position.set(ux, 0, uz);
+      s.add(u2);
+      const t2 = box(2.2, 0.06, 1.1, lam(0x2ee6c8));
+      t2.position.set(ux + 4, 0.1, uz + 2);
+      t2.rotation.y = -0.4;
+      s.add(t2);
+    }
 
     // Food cart near the pier.
     const cart = new THREE.Group();

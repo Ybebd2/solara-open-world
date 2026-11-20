@@ -70,7 +70,9 @@ export function makeCar(type, opts = {}) {
     tail.rotation.y = Math.PI;
     g.add(tail);
   } else {
-    // Body + cabin + wheels.
+    // Body + cabin + wheels. Shaped, not slab: a low hood wedge up
+    // front, a sloped windshield, side skirts, and silver hubcaps so a
+    // parked car reads as a car, not a box.
     const body = box(spec.w, spec.h, spec.l, lam(spec.body));
     body.position.y = 0.55 + spec.h / 2;
     g.add(body);
@@ -78,6 +80,41 @@ export function makeCar(type, opts = {}) {
       const cab = box(spec.w * 0.5, 0.55, spec.l * 0.85, lam(spec.cabin));
       cab.position.set(-spec.w * 0.05, 0.55 + spec.h + 0.27, 0);
       g.add(cab);
+      // Sloped windshield at the front of the cabin.
+      const shield = box(0.08, 0.62, spec.l * 0.8, lam(0x0e1a26));
+      shield.position.set(spec.w * 0.2, 0.55 + spec.h + 0.3, 0);
+      shield.rotation.z = 0.5;
+      g.add(shield);
+      // Low hood wedge ahead of the cabin (coupe gets the longest one).
+      const hoodLen = type === 'coupe' ? 1.5 : 1.1;
+      const hood = box(hoodLen, 0.22, spec.l * 0.94, lam(spec.body));
+      hood.position.set(spec.w * 0.5 - hoodLen / 2 + 0.1, 0.55 + spec.h - 0.08, 0);
+      hood.rotation.z = -0.12;
+      g.add(hood);
+      // Front bumper + rear deck.
+      const bumper = box(0.25, 0.3, spec.l * 0.98, lam(0x1a1a1a));
+      bumper.position.set(spec.w / 2 + 0.05, 0.62, 0);
+      g.add(bumper);
+      const deck = box(0.7, 0.18, spec.l * 0.9, lam(spec.body));
+      deck.position.set(-spec.w / 2 + 0.35, 0.55 + spec.h - 0.05, 0);
+      g.add(deck);
+      // Side skirts along the sills.
+      for (const sz of [-1, 1]) {
+        const skirt = box(spec.w * 0.7, 0.16, 0.08, lam(0x1a1a1a));
+        skirt.position.set(0, 0.6, sz * (spec.l / 2 + 0.01));
+        g.add(skirt);
+      }
+      if (type === 'coupe') {
+        // Black rear spoiler on two small struts.
+        const wing = box(0.35, 0.08, spec.l * 0.95, lam(0x111111));
+        wing.position.set(-spec.w / 2 + 0.15, 0.55 + spec.h + 0.42, 0);
+        g.add(wing);
+        for (const sz of [-0.6, 0.6]) {
+          const strut = box(0.08, 0.34, 0.08, lam(0x111111));
+          strut.position.set(-spec.w / 2 + 0.15, 0.55 + spec.h + 0.2, sz);
+          g.add(strut);
+        }
+      }
     } else {
       // Bus: tall windows band.
       const band = box(spec.w * 0.92, 0.9, spec.l + 0.06, lam(0xbfd9e8));
@@ -121,9 +158,12 @@ export function makeCar(type, opts = {}) {
       g.add(barHalo);
       halos.push(barHalo);
     }
-    // Wheels.
+    // Wheels: bigger, with a silver hubcap disc on the outer face so
+    // they read as wheels, not black blobs.
     const wheelGeo = new THREE.CylinderGeometry(spec.wheel, spec.wheel, 0.3, 10);
     const wheelMat = lam(0x111111);
+    const hubGeo = new THREE.CylinderGeometry(spec.wheel * 0.55, spec.wheel * 0.55, 0.32, 10);
+    const hubMat = lam(0xc8ccd4);
     const wx = spec.w / 2 - 0.7;
     const wz = spec.l / 2 - 0.15;
     for (const [dx, dz] of [[-wx, -wz], [wx, -wz], [-wx, wz], [wx, wz]]) {
@@ -131,36 +171,42 @@ export function makeCar(type, opts = {}) {
       wheel.rotation.x = Math.PI / 2;
       wheel.position.set(dx, spec.wheel, dz);
       g.add(wheel);
+      const hub = new THREE.Mesh(hubGeo, hubMat);
+      hub.rotation.x = Math.PI / 2;
+      hub.position.set(dx, spec.wheel, dz);
+      g.add(hub);
     }
-    // Headlights: two bright white squares + halo pools on the road.
+    // Headlights: two bright white squares + low flat beam pools on
+    // the road (flattened so they read as light, not smoke puffs).
     for (const dz of [-spec.l / 2 + 0.28, spec.l / 2 - 0.28]) {
       const hl = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.32), lampMat);
       hl.position.set(spec.w / 2 + 0.02, 0.85, dz);
       hl.rotation.y = Math.PI / 2;
       g.add(hl);
       const halo = new THREE.Mesh(
-        new THREE.SphereGeometry(0.9, 8, 6),
-        new THREE.MeshBasicMaterial({ color: 0xfff2c0, transparent: true, opacity: 0.1, depthWrite: false })
+        new THREE.SphereGeometry(0.55, 8, 6),
+        new THREE.MeshBasicMaterial({ color: 0xfff2c0, transparent: true, opacity: 0.06, depthWrite: false })
       );
-      halo.position.set(spec.w / 2 + 1.2, 0.7, dz);
-      halo.scale.set(1.4, 0.6, 1);
+      halo.position.set(spec.w / 2 + 0.9, 0.28, dz);
+      halo.scale.set(1.8, 0.35, 1);
       g.add(halo);
       halos.push(halo);
     }
-    // Taillights: red strip + halo.
+    // Taillights: a HORIZONTAL red strip across the rear (the old
+    // vertical strip read as a red pole in the screenshots).
     const tail = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.18, spec.l * 0.8),
+      new THREE.PlaneGeometry(spec.l * 0.72, 0.3),
       new THREE.MeshBasicMaterial({ color: 0xff2222 })
     );
-    tail.position.set(-spec.w / 2 - 0.02, 0.9, 0);
+    tail.position.set(-spec.w / 2 - 0.02, 0.95, 0);
     tail.rotation.y = -Math.PI / 2;
     g.add(tail);
     const tailHalo = new THREE.Mesh(
-      new THREE.SphereGeometry(0.8, 8, 6),
-      new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.12, depthWrite: false })
+      new THREE.SphereGeometry(0.5, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.08, depthWrite: false })
     );
-    tailHalo.position.set(-spec.w / 2 - 0.9, 0.85, 0);
-    tailHalo.scale.set(1.2, 0.6, 1.6);
+    tailHalo.position.set(-spec.w / 2 - 0.7, 0.5, 0);
+    tailHalo.scale.set(1.4, 0.4, 1.8);
     g.add(tailHalo);
     halos.push(tailHalo);
   }
@@ -172,7 +218,9 @@ export function makeCar(type, opts = {}) {
     halos, lampMat, condition: 100,
     update(dt, duskT) {
       const glow = Math.max(0, Math.min(1, duskT));
-      for (const h of this.halos) h.material.opacity = 0.08 + glow * 0.5;
+      // Halos stay subtle: the old 0.08 + glow*0.5 blew up into grey
+      // smoke puffs under every car at dusk.
+      for (const h of this.halos) h.material.opacity = 0.05 + glow * 0.22;
       this.lampMat.emissiveIntensity = 0.35 + glow * 2.2;
     },
     sync() {
